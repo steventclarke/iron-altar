@@ -6,21 +6,42 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Palette } from '@/constants/theme';
+import { initializeDatabase } from '@/data/db/database';
+import { seedDatabase } from '@/data/seed/seed';
+import { useProfileStore } from '@/state/profile-store';
+import { useSessionStore } from '@/state/session-store';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({ PressStart2P_400Regular, VT323_400Regular });
+  const [fontsLoaded, fontError] = useFonts({ PressStart2P_400Regular, VT323_400Regular });
+  const [dbReady, setDbReady] = useState(false);
 
   useEffect(() => {
-    if (loaded || error) SplashScreen.hideAsync();
-  }, [loaded, error]);
+    let cancelled = false;
+    (async () => {
+      await initializeDatabase();
+      seedDatabase();
+      useProfileStore.getState().hydrate();
+      useSessionStore.getState().hydrate();
+      if (!cancelled) setDbReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  if (!loaded && !error) return null;
+  const ready = (fontsLoaded || fontError) && dbReady;
+
+  useEffect(() => {
+    if (ready) SplashScreen.hideAsync();
+  }, [ready]);
+
+  if (!ready) return null;
 
   return (
     <SafeAreaProvider>

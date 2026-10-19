@@ -59,8 +59,13 @@ as you train. Must run on iOS, Android, and web.
 - **Language:** TypeScript.
 - **Navigation:** Expo Router (file-based; real URLs on web).
 - **State:** Zustand with a repository layer over storage.
-- **Persistence:** local-first. Expo SQLite on native; `wa-sqlite`/IndexedDB on web.
-  Fallback: AsyncStorage/localStorage JSON if SQLite-on-web proves troublesome.
+- **Persistence:** local-first, **single versioned JSON document** (`AsyncStorage`) behind a
+  repository layer, with migrations in `src/data/db`.
+  - **Why not SQLite (chosen during P1):** `expo-sqlite` on web requires `SharedArrayBuffer`
+    plus `COEP`/`COOP` headers on every host, which risks the hard "must run in a web
+    browser" constraint on static hosting. A JSON document is portable everywhere with no
+    runtime/bundle config and is ample for a personal training log.
+  - The repository seam keeps a future SQLite (or server) swap open.
 - **Charts:** `react-native-svg` + `victory-native` (cross-platform, works on web).
 - **Animation:** Reanimated 3 + `moti`; sprite frames via `expo-image` or a lightweight
   sprite-sheet component.
@@ -124,9 +129,10 @@ Notes:
 
 - **P0 Scaffold:** Expo + TS init, Expo Router, lint/format, tsconfig paths, theme tokens,
   pixel font, base UI primitives, skeleton routes. Runs on iOS/Android/web.
-- **P1 Data:** schema, migrations, repositories, seed exercises (5 main lifts + common
-  accessories), SyncAdapter seam, Zustand stores, unit conversion. Persist the active/draft
-  session (refinement #2 prerequisite).
+- **P1 Data (done):** versioned JSON document + migrations, repositories (profile,
+  exercise, session, body weight, draft), seed exercises (5 main lifts + accessories),
+  SyncAdapter seam, Zod-free typed stores on repositories, unit conversion, and persisted
+  active/draft session (refinement #2 prerequisite). Tests deferred to a later phase.
 - **P2 Profile + Avatar:** character registry, avatar component, sprite-sheet loader,
   stage calc, profile screen.
 - **P3 Session Log:** exercise picker, set entry (weight/reps/warmup/notes), rest timer,

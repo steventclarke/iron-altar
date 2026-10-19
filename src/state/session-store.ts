@@ -1,18 +1,17 @@
 import { create } from 'zustand';
 
+import type { DraftSession } from '@/data/db/schema';
+import { draftRepository } from '@/data/repositories/draft-repository';
 import { generateId } from '@/domain/id';
 import type { SetEntry } from '@/domain/types';
 import { xpFromSets } from '@/domain/xp';
 
-export type DraftSession = {
-  id: string;
-  startedAt: string;
-  notes: string;
-  sets: SetEntry[];
-};
+export type { DraftSession };
 
 type SessionState = {
   active: DraftSession | null;
+  /** Load any in-progress draft from the database. */
+  hydrate: () => void;
   start: () => void;
   discard: () => void;
   setNotes: (notes: string) => void;
@@ -23,46 +22,50 @@ type SessionState = {
   xpEarned: () => number;
 };
 
-export const useSessionStore = create<SessionState>((set, get) => ({
-  active: null,
-  start: () =>
-    set((state) =>
-      state.active
-        ? state
-        : {
-            active: { id: generateId(), startedAt: new Date().toISOString(), notes: '', sets: [] },
-          },
-    ),
-  discard: () => set({ active: null }),
-  setNotes: (notes) =>
-    set((state) => (state.active ? { active: { ...state.active, notes } } : state)),
-  addSet: (draft) =>
-    set((state) => {
-      if (!state.active) return state;
+export const useSessionStore = create<SessionState>((set, get) => {
+  const commit = (active: DraftSession | null) => {
+    draftRepository.save(active);
+    set({ active });
+  };
+
+  return {
+    active: null,
+    hydrate: () => set({ active: draftRepository.get() }),
+    start: () => {
+      if (get().active) return;
+      commit({ id: generateId(), startedAt: new Date().toISOString(), notes: '', sets: [] });
+    },
+    discard: () => {
+      draftRepository.clear();
+      set({ active: null });
+    },
+    setNotes: (notes) => {
+      const active = get().active;
+      if (active) commit({ ...active, notes });
+    },
+    addSet: (draft) => {
+      const active = get().active;
+      if (!active) return;
       const entry: SetEntry = {
         ...draft,
         id: generateId(),
-        sessionId: state.active.id,
-        order: state.active.sets.length,
+        sessionId: active.id,
+        order: active.sets.length,
       };
-      return { active: { ...state.active, sets: [...state.active.sets, entry] } };
-    }),
-  removeSet: (setId) =>
-    set((state) =>
-      state.active
-        ? {
-            active: {
-              ...state.active,
-              sets: state.active.sets
-                .filter((s) => s.id !== setId)
-                .map((s, i) => ({ ...s, order: i })),
-            },
-          }
-        : state,
-    ),
-  totalVolumeKg: () => {
-    const sets = get().active?.sets ?? [];
-    return sets.filter((s) => !s.isWarmup).reduce((sum, s) => sum + s.weightKg * s.reps, 0);
-  },
-  xpEarned: () => xpFromSets(get().active?.sets ?? []),
-}));
+      commit({ ...active, sets: [...active.sets, entry] });
+    },
+    removeSet: (setId) => {
+      const active = get().active;
+      if (!active) return;
+      commit({
+        ...active,
+        sets: active.sets.filter((s) => s.id !== setId).map((s, index) => ({ ...s, order: index })),
+      });
+    },
+    totalVolumeKg: () =>
+      (get().active?.sets ?? [])
+        .filter((s) => !s.isWarmup)
+        .reduce((sum, s) => sum + s.weightKg * s.reps, 0),
+    xpEarned: () => xpFromSets(get().active?.sets ?? []),
+  };
+});

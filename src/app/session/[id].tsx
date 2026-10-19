@@ -7,6 +7,7 @@ import { Panel } from '@/ui/panel';
 import { Screen } from '@/ui/screen';
 import { PixelText } from '@/ui/text';
 import { Fonts, FontSizes, Palette, Spacing } from '@/constants/theme';
+import { sessionRepository } from '@/data/repositories/session-repository';
 import { SEED_EXERCISES } from '@/data/seed/exercises';
 import { formatWeight, fromDisplay, UNIT_LABEL } from '@/domain/units';
 import { useProfileStore } from '@/state/profile-store';
@@ -57,6 +58,7 @@ export default function SessionScreen() {
   };
 
   const finish = () => {
+    sessionRepository.complete(active);
     if (xp > 0) addXp(xp);
     discard();
     router.back();

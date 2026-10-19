@@ -1,48 +1,38 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { DEFAULT_CHARACTER_ID } from '@/art/characters';
+import { profileRepository } from '@/data/repositories/profile-repository';
 import { generateId } from '@/domain/id';
 import type { Profile, UnitPreference } from '@/domain/types';
-import { clampXp } from '@/domain/xp';
 
 type ProfileState = {
   profile: Profile | null;
+  /** Load the profile from the database into the store. */
+  hydrate: () => void;
   createProfile: (name: string) => void;
   setUnitPref: (unit: UnitPreference) => void;
   addXp: (amount: number) => void;
   reset: () => void;
 };
 
-export const useProfileStore = create<ProfileState>()(
-  persist(
-    (set) => ({
-      profile: null,
-      createProfile: (name) =>
-        set({
-          profile: {
-            id: generateId(),
-            name: name.trim() || 'Athlete',
-            characterId: DEFAULT_CHARACTER_ID,
-            unitPref: 'kg',
-            createdAt: new Date().toISOString(),
-            xp: 0,
-          },
-        }),
-      setUnitPref: (unitPref) =>
-        set((state) => (state.profile ? { profile: { ...state.profile, unitPref } } : state)),
-      addXp: (amount) =>
-        set((state) =>
-          state.profile
-            ? { profile: { ...state.profile, xp: clampXp(state.profile.xp + amount) } }
-            : state,
-        ),
-      reset: () => set({ profile: null }),
-    }),
-    {
-      name: 'iron-altar/profile',
-      storage: createJSONStorage(() => AsyncStorage),
-    },
-  ),
-);
+export const useProfileStore = create<ProfileState>((set) => ({
+  profile: null,
+  hydrate: () => set({ profile: profileRepository.get() }),
+  createProfile: (name) => {
+    const profile: Profile = {
+      id: generateId(),
+      name: name.trim() || 'Athlete',
+      characterId: DEFAULT_CHARACTER_ID,
+      unitPref: 'kg',
+      createdAt: new Date().toISOString(),
+      xp: 0,
+    };
+    set({ profile: profileRepository.save(profile) });
+  },
+  setUnitPref: (unitPref) => set({ profile: profileRepository.update({ unitPref }) }),
+  addXp: (amount) => set({ profile: profileRepository.addXp(amount) }),
+  reset: () => {
+    profileRepository.clear();
+    set({ profile: null });
+  },
+}));
