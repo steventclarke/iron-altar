@@ -125,14 +125,31 @@ Notes:
 - **P0 Scaffold:** Expo + TS init, Expo Router, lint/format, tsconfig paths, theme tokens,
   pixel font, base UI primitives, skeleton routes. Runs on iOS/Android/web.
 - **P1 Data:** schema, migrations, repositories, seed exercises (5 main lifts + common
-  accessories), SyncAdapter seam, Zustand stores, unit conversion.
+  accessories), SyncAdapter seam, Zustand stores, unit conversion. Persist the active/draft
+  session (refinement #2 prerequisite).
 - **P2 Profile + Avatar:** character registry, avatar component, sprite-sheet loader,
   stage calc, profile screen.
 - **P3 Session Log:** exercise picker, set entry (weight/reps/warmup/notes), rest timer,
-  validation, persistence.
+  validation, persistence. Duplicate-set button (#1); resume in-progress session (#2).
 - **P4 History:** list + detail view.
 - **P5 Data Viz:** chart components + per-lift / body-weight screens.
 - **P6 Gamification & Animations:** XP/decay/streak logic, set-complete + workout-complete
   animations, avatar growth, trend indicator.
 - **P7 Polish & Ship:** responsive web, accessibility, empty states, static web export +
   hosted URL, native build config (EAS).
+
+## 6. Feature Refinements (triaged)
+
+Efficiency rule: fold **structural** items (data model, domain, persistence, architecture)
+in as early as possible; defer **experiential** items (polish, feel, copy) until the feature
+can actually be used. Each phase pulls in the refinements that intersect its surface area.
+
+| #  | Refinement                                                                                          | Phase                          | Notes                                                                                                                                                                                       |
+| -- | --------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1  | Duplicate-set button: re-log a set with the same weight x reps without re-entering.                  | **P3** (Session Log)           | Operates on the existing `SetEntry` shape — no schema/domain change. Small UI win, best built alongside set entry.                                                                          |
+| 2  | In-progress session survives leaving the screen, so the user can check prior sessions and return.    | **P1** (persist) + **P3** (UX) | Structural. Phase A (P1): persist the draft session instead of the in-memory `useSessionStore`, so it survives navigation and app restart. Phase B (P3): resume affordance on Dungeon Gym + return to the active session. |
+
+### Triaged into phases
+
+- **P1 Data:** persist the active/draft session (prerequisite for refinement #2).
+- **P3 Session Log:** duplicate-set (#1); resume in-progress session UX (#2).
