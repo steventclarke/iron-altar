@@ -102,7 +102,8 @@ touching UI.
 - **Profile**: `id, name, characterId, unitPref (kg/lb/st), createdAt, xp, stage`
 - **Character**: `id, name, spriteSheet, stageCount` (registry; one implemented now)
 - **Exercise**: `id, name, category (barbell/bodyweight/dumbbell), isMainLift, muscleGroup`
-- **Session**: `id, date, startedAt, endedAt, notes, completed, totalVolume, xpEarned`
+- **Session**: `id, date (performed calendar day, user-chosen), startedAt?, endedAt?, notes,
+  completed, totalVolume, xpEarned` — timestamps are present only for live sessions.
 - **SetEntry**: `sessionId, exerciseId, weightKg, reps, isWarmup, notes?, order`
 - **BodyWeight**: `id, date, weightKg`
 - **AvatarStage**: derived from XP — 10 tiers over 0–1000 XP -> sprite tier + animation set
@@ -133,16 +134,22 @@ Notes:
   exercise, session, body weight, draft), seed exercises (5 main lifts + accessories),
   SyncAdapter seam, Zod-free typed stores on repositories, unit conversion, and persisted
   active/draft session (refinement #2 prerequisite). Tests deferred to a later phase.
+- **P1.1 Session Entry Date (done):** `Session.date` becomes the user-chosen performed
+  calendar day (`YYYY-MM-DD`) with `startedAt`/`endedAt` now optional (live sessions only);
+  `DraftSession` carries the entry date; `DB_VERSION` → 2 with a migration normalizing legacy
+  dates; repository sorts by performed date; store gains `start(date?)` + `setEntryDate`
+  (refinement #3 data model — prerequisite for retroactive workouts in P3).
 - **P2 Profile + Avatar:** character registry, avatar component, sprite-sheet loader,
   stage calc, profile screen.
 - **P3 Session Log:** exercise picker, set entry (weight/reps/warmup/notes), rest timer,
-  validation, persistence. Duplicate-set button (#1); resume in-progress session (#2).
-- **P4 History:** list + detail view.
+  validation, persistence. Duplicate-set button (#1); resume in-progress session (#2);
+  retroactive workouts + `Session` entry-date support (#3).
+- **P4 History:** list + detail view. Render retroactively-dated sessions (#3).
 - **P5 Data Viz:** chart components + per-lift / body-weight screens.
 - **P6 Gamification & Animations:** XP/decay/streak logic, set-complete + workout-complete
-  animations, avatar growth, trend indicator.
+  animations, avatar growth, trend indicator. Count manual entry dates for streak/decay (#3).
 - **P7 Polish & Ship:** responsive web, accessibility, empty states, static web export +
-  hosted URL, native build config (EAS).
+  hosted URL, native build config (EAS). Text-file import (#4, post-MVP candidate).
 
 ## 6. Feature Refinements (triaged)
 
@@ -154,8 +161,17 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
 | -- | --------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1  | Duplicate-set button: re-log a set with the same weight x reps without re-entering.                  | **P3** (Session Log)           | Operates on the existing `SetEntry` shape — no schema/domain change. Small UI win, best built alongside set entry.                                                                          |
 | 2  | In-progress session survives leaving the screen, so the user can check prior sessions and return.    | **P1** (persist) + **P3** (UX) | Structural. Phase A (P1): persist the draft session instead of the in-memory `useSessionStore`, so it survives navigation and app restart. Phase B (P3): resume affordance on Dungeon Gym + return to the active session. |
+| 3  | Log retroactive workouts for prior dates.                                                            | **P1.1** (data) + **P3** (UX) + **P6** (streak/decay) | Structural. P1.1 shipped the data model: `Session.date` is the performed calendar day, `startedAt`/`endedAt` are optional (live only), and the draft/store carry a settable entry date. P3 adds the date-picker UX and retroactive flow. Feeds History (P4); weekly streak/decay (P6) must count manual date, not just "today". |
+| 4  | Import workout data from a text file.                                                                | **P7** (post-MVP candidate)    | Needs a documented import format (CSV/JSON), a bulk-insert repository method with de-dupe, and platform file pickers (web input vs native document picker). Defer until the data model is stable; scope risk vs the Nov MVP. Doubles as a backfill path for #3. |
 
 ### Triaged into phases
 
-- **P1 Data:** persist the active/draft session (prerequisite for refinement #2).
-- **P3 Session Log:** duplicate-set (#1); resume in-progress session UX (#2).
+- **P1 Data (done):** persist the active/draft session (prerequisite for refinement #2).
+- **P1.1 Session Entry Date (done):** `Session` supports a user-chosen performed date
+  (data model for refinement #3).
+- **P3 Session Log:** duplicate-set (#1); resume in-progress session UX (#2); retroactive
+  workouts — date-picker UX over the P1.1 entry-date model (#3).
+- **P4 History:** render retroactively-dated sessions (#3 dependency).
+- **P6 Gamification:** account for manual entry dates in weekly streak/decay (#3).
+- **P7 Polish & Ship:** text-file import (#4) — post-MVP candidate; confirm format before
+  building.

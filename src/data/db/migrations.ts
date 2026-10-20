@@ -1,4 +1,5 @@
 import { DB_VERSION, emptyDatabase, type DatabaseShape } from '@/data/db/schema';
+import { toCalendarDate } from '@/domain/date';
 
 type Migration = {
   /** Version this migration upgrades the document *to*. */
@@ -14,6 +15,23 @@ const migrations: Migration[] = [
   {
     version: 1,
     migrate: (db) => ({ ...emptyDatabase(), ...db, version: 1 }),
+  },
+  {
+    version: 2,
+    // Session entry date: `date` becomes the performed calendar day while the
+    // optional timestamps record a live session. Normalize legacy rows where
+    // `date` mirrored the full `startedAt` timestamp.
+    migrate: (db) => ({
+      ...db,
+      sessions: db.sessions.map((session) => ({
+        ...session,
+        date: toCalendarDate(session.date ?? session.startedAt),
+      })),
+      draft: db.draft
+        ? { ...db.draft, date: toCalendarDate(db.draft.date ?? db.draft.startedAt) }
+        : null,
+      version: 2,
+    }),
   },
 ];
 

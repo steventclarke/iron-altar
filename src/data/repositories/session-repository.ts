@@ -1,11 +1,17 @@
 import { getDatabase, mutate } from '@/data/db/database';
 import type { DraftSession } from '@/data/db/schema';
+import { toCalendarDate, todayCalendarDate } from '@/domain/date';
 import { generateId } from '@/domain/id';
 import type { Session, SetEntry } from '@/domain/types';
 import { xpFromSets } from '@/domain/xp';
 
+function timestamp(session: Session): number {
+  return new Date(session.startedAt ?? session.endedAt ?? session.date).getTime();
+}
+
 function byDateDesc(a: Session, b: Session): number {
-  return new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime();
+  if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+  return timestamp(b) - timestamp(a);
 }
 
 export const sessionRepository = {
@@ -29,11 +35,15 @@ export const sessionRepository = {
 
   /** Persist a finished draft as a completed session + its sets. */
   complete(draft: DraftSession): Session {
+    const date = draft.date ?? todayCalendarDate();
+    // Timestamps only describe a session logged live on its performed day; a
+    // backdated entry has no wall-clock record.
+    const loggedLive = date === toCalendarDate(draft.startedAt);
+
     const session: Session = {
       id: draft.id,
-      date: draft.startedAt,
-      startedAt: draft.startedAt,
-      endedAt: new Date().toISOString(),
+      date,
+      ...(loggedLive ? { startedAt: draft.startedAt, endedAt: new Date().toISOString() } : {}),
       notes: draft.notes || undefined,
       completed: true,
       totalVolumeKg: draft.sets

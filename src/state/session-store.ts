@@ -2,8 +2,9 @@ import { create } from 'zustand';
 
 import type { DraftSession } from '@/data/db/schema';
 import { draftRepository } from '@/data/repositories/draft-repository';
+import { isCalendarDate, todayCalendarDate } from '@/domain/date';
 import { generateId } from '@/domain/id';
-import type { SetEntry } from '@/domain/types';
+import type { CalendarDate, SetEntry } from '@/domain/types';
 import { xpFromSets } from '@/domain/xp';
 
 export type { DraftSession };
@@ -12,7 +13,10 @@ type SessionState = {
   active: DraftSession | null;
   /** Load any in-progress draft from the database. */
   hydrate: () => void;
-  start: () => void;
+  /** Begin a draft; `date` defaults to today for live workouts. */
+  start: (date?: CalendarDate) => void;
+  /** Change the performed day (used to log retroactive workouts). */
+  setEntryDate: (date: CalendarDate) => void;
   discard: () => void;
   setNotes: (notes: string) => void;
   addSet: (set: Omit<SetEntry, 'id' | 'sessionId' | 'order'>) => void;
@@ -31,9 +35,20 @@ export const useSessionStore = create<SessionState>((set, get) => {
   return {
     active: null,
     hydrate: () => set({ active: draftRepository.get() }),
-    start: () => {
+    start: (date) => {
       if (get().active) return;
-      commit({ id: generateId(), startedAt: new Date().toISOString(), notes: '', sets: [] });
+      commit({
+        id: generateId(),
+        date: date && isCalendarDate(date) ? date : todayCalendarDate(),
+        startedAt: new Date().toISOString(),
+        notes: '',
+        sets: [],
+      });
+    },
+    setEntryDate: (date) => {
+      const active = get().active;
+      if (!active || !isCalendarDate(date)) return;
+      commit({ ...active, date });
     },
     discard: () => {
       draftRepository.clear();

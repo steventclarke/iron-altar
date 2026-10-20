@@ -12,7 +12,11 @@ export type ExerciseCategory = 'barbell' | 'dumbbell' | 'bodyweight' | 'machine'
 /** The five lifts surfaced in data visualization. */
 export type MainLift = 'squat' | 'bench' | 'deadlift' | 'overhead_press' | 'power_clean';
 
-export type IsoDate = string; // ISO-8601 string
+/** ISO-8601 timestamp (full date + time). */
+export type IsoDate = string;
+
+/** ISO-8601 calendar date (`YYYY-MM-DD`), a day-level value with no time or zone. */
+export type CalendarDate = string;
 
 export type Character = {
   id: string;
@@ -44,8 +48,13 @@ export type Exercise = {
 
 export type Session = {
   id: string;
-  date: IsoDate;
-  startedAt: IsoDate;
+  /** Day the workout was performed. User-chosen; may be backdated. */
+  date: CalendarDate;
+  /**
+   * Wall-clock start/end, present only for sessions logged live. Retroactively
+   * dated sessions have no real timestamps and leave these undefined.
+   */
+  startedAt?: IsoDate;
   endedAt?: IsoDate;
   notes?: string;
   completed: boolean;
