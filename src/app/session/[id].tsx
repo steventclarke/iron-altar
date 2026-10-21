@@ -3,17 +3,18 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { PixelButton } from '@/ui/button';
+import { EntryDateStepper } from '@/ui/date-stepper';
 import { Panel } from '@/ui/panel';
 import { Screen } from '@/ui/screen';
+import { RestTimer } from '@/ui/rest-timer';
 import { PixelText } from '@/ui/text';
 import { Fonts, FontSizes, Palette, Spacing } from '@/constants/theme';
+import { exerciseRepository } from '@/data/repositories/exercise-repository';
 import { sessionRepository } from '@/data/repositories/session-repository';
-import { SEED_EXERCISES } from '@/data/seed/exercises';
 import { formatWeight, fromDisplay, UNIT_LABEL } from '@/domain/units';
 import { useProfileStore } from '@/state/profile-store';
+import { useRestTimer } from '@/state/rest-timer-store';
 import { useSessionStore } from '@/state/session-store';
-
-const EXERCISES = SEED_EXERCISES.filter((e) => e.isMainLift);
 
 export default function SessionScreen() {
   useLocalSearchParams<{ id: string }>();
@@ -24,12 +25,22 @@ export default function SessionScreen() {
   const active = useSessionStore((s) => s.active);
   const addSet = useSessionStore((s) => s.addSet);
   const removeSet = useSessionStore((s) => s.removeSet);
+  const duplicateSet = useSessionStore((s) => s.duplicateSet);
+  const setEntryDate = useSessionStore((s) => s.setEntryDate);
   const discard = useSessionStore((s) => s.discard);
+  const startRest = useRestTimer((s) => s.start);
+  const restDuration = useRestTimer((s) => s.durationSeconds);
 
-  const [exerciseId, setExerciseId] = useState(EXERCISES[0]?.id ?? '');
+  const exercises = exerciseRepository.all();
+  const mainLifts = exercises.filter((e) => e.isMainLift);
+  const accessories = exercises.filter((e) => !e.isMainLift);
+
+  const [exerciseId, setExerciseId] = useState(mainLifts[0]?.id ?? exercises[0]?.id ?? '');
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
   const [warmup, setWarmup] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   if (!active) {
     return (
@@ -42,19 +53,31 @@ export default function SessionScreen() {
 
   const volumeKg = useSessionStore.getState().totalVolumeKg();
   const xp = useSessionStore.getState().xpEarned();
+  const lastSet = active.sets.length > 0 ? active.sets[active.sets.length - 1] : null;
 
   const submitSet = () => {
     const parsedWeight = Number.parseFloat(weight || '0');
     const parsedReps = Number.parseInt(reps || '0', 10);
-    if (!Number.isFinite(parsedReps) || parsedReps <= 0) return;
+    if (!Number.isFinite(parsedWeight) || parsedWeight < 0) {
+      setError('Weight must be 0 or more.');
+      return;
+    }
+    if (!Number.isFinite(parsedReps) || parsedReps <= 0) {
+      setError('Reps must be 1 or more.');
+      return;
+    }
+    setError(null);
     addSet({
       exerciseId,
-      weightKg: fromDisplay(Number.isFinite(parsedWeight) ? parsedWeight : 0, unitPref),
+      weightKg: fromDisplay(parsedWeight, unitPref),
       reps: parsedReps,
       isWarmup: warmup,
+      notes: notes.trim() || undefined,
     });
     setWeight('');
     setReps('');
+    setNotes('');
+    startRest(restDuration);
   };
 
   const finish = () => {
@@ -73,12 +96,18 @@ export default function SessionScreen() {
         </PixelText>
       </View>
 
+      <RestTimer />
+
+      <Panel>
+        <EntryDateStepper date={active.date} onChange={setEntryDate} />
+      </Panel>
+
       <Panel>
         <PixelText variant="label" color={Palette.textSecondary}>
           Exercise
         </PixelText>
         <View style={styles.chips}>
-          {EXERCISES.map((exercise) => (
+          {[...mainLifts, ...accessories].map((exercise) => (
             <Pressable key={exercise.id} onPress={() => setExerciseId(exercise.id)}>
               <View style={[styles.chip, exercise.id === exerciseId && styles.chipActive]}>
                 <PixelText variant="caption">{exercise.name}</PixelText>
@@ -118,12 +147,32 @@ export default function SessionScreen() {
           </View>
         </View>
 
+        <TextInput
+          value={notes}
+          onChangeText={setNotes}
+          placeholder="Notes (RPE, form, superset...)"
+          placeholderTextColor={Palette.textMuted}
+          style={styles.input}
+        />
+
         <PixelButton
           label={warmup ? 'Warmup: On' : 'Warmup: Off'}
           variant={warmup ? 'primary' : 'secondary'}
           onPress={() => setWarmup((w) => !w)}
         />
+        {error && (
+          <PixelText variant="caption" color={Palette.danger}>
+            {error}
+          </PixelText>
+        )}
         <PixelButton label="Log Set" onPress={submitSet} />
+        {lastSet && (
+          <PixelButton
+            label="Repeat Last Set"
+            variant="secondary"
+            onPress={() => duplicateSet(lastSet.id)}
+          />
+        )}
       </Panel>
 
       {active.sets.length > 0 && (
@@ -132,19 +181,27 @@ export default function SessionScreen() {
             Logged Sets
           </PixelText>
           {active.sets.map((set) => {
-            const exercise = SEED_EXERCISES.find((e) => e.id === set.exerciseId);
+            const exercise = exerciseRepository.byId(set.exerciseId);
             return (
               <View key={set.id} style={styles.setRow}>
-                <PixelText variant="body">
+                <PixelText variant="body" style={styles.setText}>
                   {exercise?.name ?? 'Unknown'} · {formatWeight(set.weightKg, unitPref)} x{' '}
                   {set.reps}
                   {set.isWarmup ? ' (warmup)' : ''}
+                  {set.notes ? `\n${set.notes}` : ''}
                 </PixelText>
-                <Pressable onPress={() => removeSet(set.id)}>
-                  <PixelText variant="label" color={Palette.danger}>
-                    X
-                  </PixelText>
-                </Pressable>
+                <View style={styles.setActions}>
+                  <Pressable onPress={() => duplicateSet(set.id)} hitSlop={Spacing.two}>
+                    <PixelText variant="label" color={Palette.gold}>
+                      2X
+                    </PixelText>
+                  </Pressable>
+                  <Pressable onPress={() => removeSet(set.id)} hitSlop={Spacing.two}>
+                    <PixelText variant="label" color={Palette.danger}>
+                      X
+                    </PixelText>
+                  </Pressable>
+                </View>
               </View>
             );
           })}
@@ -152,7 +209,14 @@ export default function SessionScreen() {
       )}
 
       <PixelButton label="Finish Workout" onPress={finish} />
-      <PixelButton label="Discard" variant="danger" onPress={discard} />
+      <PixelButton
+        label="Discard"
+        variant="danger"
+        onPress={() => {
+          discard();
+          router.back();
+        }}
+      />
     </Screen>
   );
 }
@@ -200,6 +264,15 @@ const styles = StyleSheet.create({
   setRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: Spacing.two,
+  },
+  setText: {
+    flex: 1,
+  },
+  setActions: {
+    flexDirection: 'row',
+    gap: Spacing.three,
     alignItems: 'center',
   },
 });

@@ -7,12 +7,14 @@ import { Panel } from '@/ui/panel';
 import { Screen } from '@/ui/screen';
 import { PixelText } from '@/ui/text';
 import { Palette, Spacing } from '@/constants/theme';
+import { addCalendarDays, formatCalendarDate, todayCalendarDate } from '@/domain/date';
 import { stageInfoForXp } from '@/domain/xp';
 import { useProfileStore } from '@/state/profile-store';
 import { useSessionStore } from '@/state/session-store';
 
 export default function DungeonGymScreen() {
   const profile = useProfileStore((s) => s.profile);
+  const active = useSessionStore((s) => s.active);
   const startSession = useSessionStore((s) => s.start);
 
   if (!profile) {
@@ -31,10 +33,19 @@ export default function DungeonGymScreen() {
 
   const stage = stageInfoForXp(profile.xp);
 
+  const openActiveSession = () => {
+    const current = useSessionStore.getState().active;
+    if (current) router.push(`/session/${current.id}`);
+  };
+
   const beginWorkout = () => {
     startSession();
-    const active = useSessionStore.getState().active;
-    if (active) router.push(`/session/${active.id}`);
+    openActiveSession();
+  };
+
+  const beginPastWorkout = () => {
+    startSession(addCalendarDays(todayCalendarDate(), -1));
+    openActiveSession();
   };
 
   return (
@@ -57,7 +68,23 @@ export default function DungeonGymScreen() {
         <StatRow label="Trend" value="—" />
       </Panel>
 
-      <PixelButton label="Start Workout" onPress={beginWorkout} />
+      {active ? (
+        <Panel highlight>
+          <PixelText variant="label" color={Palette.gold}>
+            Work In Progress
+          </PixelText>
+          <PixelText variant="body" color={Palette.textSecondary}>
+            {formatCalendarDate(active.date)} · {active.sets.length} sets logged
+          </PixelText>
+          <PixelButton label="Resume Session" onPress={openActiveSession} />
+        </Panel>
+      ) : (
+        <PixelButton label="Start Workout" onPress={beginWorkout} />
+      )}
+
+      {!active && (
+        <PixelButton label="Log Past Workout" variant="secondary" onPress={beginPastWorkout} />
+      )}
     </Screen>
   );
 }

@@ -21,6 +21,8 @@ type SessionState = {
   setNotes: (notes: string) => void;
   addSet: (set: Omit<SetEntry, 'id' | 'sessionId' | 'order'>) => void;
   removeSet: (setId: string) => void;
+  /** Copy an existing set to the end of the log (duplicate-set button). */
+  duplicateSet: (setId: string) => void;
   /** Working-set volume in kg. */
   totalVolumeKg: () => number;
   xpEarned: () => number;
@@ -76,6 +78,13 @@ export const useSessionStore = create<SessionState>((set, get) => {
         ...active,
         sets: active.sets.filter((s) => s.id !== setId).map((s, index) => ({ ...s, order: index })),
       });
+    },
+    duplicateSet: (setId) => {
+      const active = get().active;
+      const source = active?.sets.find((s) => s.id === setId);
+      if (!active || !source) return;
+      const entry: SetEntry = { ...source, id: generateId(), order: active.sets.length };
+      commit({ ...active, sets: [...active.sets, entry] });
     },
     totalVolumeKg: () =>
       (get().active?.sets ?? [])
