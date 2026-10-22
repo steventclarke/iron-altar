@@ -57,3 +57,10 @@ export function formatCalendarDate(date: CalendarDate): string {
   const weekday = WEEKDAY_LABELS[new Date(year, month - 1, day).getDay()];
   return `${weekday} ${MONTH_LABELS[month - 1]} ${day} ${year}`;
 }
+
+/** Compact label for charts, e.g. `OCT 14`. */
+export function formatShortCalendarDate(date: CalendarDate): string {
+  if (!isCalendarDate(date)) return date;
+  const [, month, day] = date.split('-').map(Number);
+  return `${MONTH_LABELS[month - 1]} ${day}`;
+}

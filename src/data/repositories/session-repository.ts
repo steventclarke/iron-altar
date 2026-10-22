@@ -33,6 +33,11 @@ export const sessionRepository = {
       .sort((a, b) => a.order - b.order);
   },
 
+  /** Every logged set across completed sessions (used for progress rollups). */
+  allSets(): SetEntry[] {
+    return getDatabase().sets;
+  },
+
   /** Persist a finished draft as a completed session + its sets. */
   complete(draft: DraftSession): Session {
     const date = draft.date ?? todayCalendarDate();

@@ -56,6 +56,9 @@ export default function RootLayout() {
       >
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="session/[id]" />
+        <Stack.Screen name="history/[id]" />
+        <Stack.Screen name="progress/[lift]" />
+        <Stack.Screen name="progress/body-weight" />
       </Stack>
     </SafeAreaProvider>
   );
