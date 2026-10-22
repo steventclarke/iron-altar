@@ -1,4 +1,4 @@
-import { DB_VERSION, emptyDatabase, type DatabaseShape } from '@/data/db/schema';
+import { DB_VERSION, defaultSettings, emptyDatabase, type DatabaseShape } from '@/data/db/schema';
 import { toCalendarDate } from '@/domain/date';
 
 type Migration = {
@@ -31,6 +31,15 @@ const migrations: Migration[] = [
         ? { ...db.draft, date: toCalendarDate(db.draft.date ?? db.draft.startedAt) }
         : null,
       version: 2,
+    }),
+  },
+  {
+    version: 3,
+    // User settings document (starts with the persisted rest timer).
+    migrate: (db) => ({
+      ...db,
+      settings: { ...defaultSettings(), ...db.settings },
+      version: 3,
     }),
   },
 ];

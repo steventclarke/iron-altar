@@ -1,13 +1,20 @@
 import { create } from 'zustand';
 
-/** Default rest length when a set is logged. */
-export const DEFAULT_REST_SECONDS = 90;
+import { DEFAULT_REST_SECONDS } from '@/data/db/schema';
+import { settingsRepository } from '@/data/repositories/settings-repository';
 
-/** Quick-pick rest lengths offered on the session screen. */
-export const REST_PRESETS = [60, 90, 120, 180] as const;
+export { DEFAULT_REST_SECONDS };
+
+/** Clamp a chosen rest length to a sane range (0:05 - 60:00). */
+export const MIN_REST_SECONDS = 5;
+export const MAX_REST_SECONDS = 60 * 60;
 
 type RestTimerState = {
-  /** Target rest length for the most recent start, used by presets + auto-start. */
+  /**
+   * User's preferred rest length, in seconds. Persisted via the settings
+   * repository so it survives app restarts (refinement #8); the default is
+   * 1:00 until the user changes it.
+   */
   durationSeconds: number;
   /** Epoch ms when the current rest ends; null when idle. */
   endsAt: number | null;
@@ -15,7 +22,11 @@ type RestTimerState = {
   remainingSeconds: number;
   /** True once a running rest has counted down to zero (until restarted/stopped). */
   finished: boolean;
-  /** Begin (or restart) a rest of `seconds`, defaulting to the last duration. */
+  /** Load the persisted rest length from the database. */
+  hydrate: () => void;
+  /** Set (and persist) the preferred rest length in seconds. */
+  setDuration: (seconds: number) => void;
+  /** Begin (or restart) a rest of `seconds`, defaulting to the preferred length. */
   start: (seconds?: number) => void;
   stop: () => void;
   reset: () => void;
@@ -23,9 +34,15 @@ type RestTimerState = {
   tick: () => void;
 };
 
+function clampRest(seconds: number): number {
+  if (!Number.isFinite(seconds)) return DEFAULT_REST_SECONDS;
+  return Math.max(MIN_REST_SECONDS, Math.min(MAX_REST_SECONDS, Math.round(seconds)));
+}
+
 /**
  * Rest timer as store state (not component state) so the countdown survives
- * navigating away from the session screen. Purely ephemeral — nothing persists.
+ * navigating away from the session screen. The chosen duration is persisted;
+ * the live countdown is ephemeral.
  */
 export const useRestTimer = create<RestTimerState>((set, get) => ({
   durationSeconds: DEFAULT_REST_SECONDS,
@@ -33,8 +50,16 @@ export const useRestTimer = create<RestTimerState>((set, get) => ({
   remainingSeconds: 0,
   finished: false,
 
+  hydrate: () => set({ durationSeconds: settingsRepository.get().restSeconds }),
+
+  setDuration: (seconds) => {
+    const duration = clampRest(seconds);
+    settingsRepository.update({ restSeconds: duration });
+    set({ durationSeconds: duration });
+  },
+
   start: (seconds) => {
-    const duration = seconds ?? get().durationSeconds;
+    const duration = clampRest(seconds ?? get().durationSeconds);
     set({
       durationSeconds: duration,
       endsAt: Date.now() + duration * 1000,
@@ -47,7 +72,6 @@ export const useRestTimer = create<RestTimerState>((set, get) => ({
 
   reset: () =>
     set({
-      durationSeconds: DEFAULT_REST_SECONDS,
       endsAt: null,
       remainingSeconds: 0,
       finished: false,

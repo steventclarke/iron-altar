@@ -21,6 +21,8 @@ type SessionState = {
   setNotes: (notes: string) => void;
   addSet: (set: Omit<SetEntry, 'id' | 'sessionId' | 'order'>) => void;
   removeSet: (setId: string) => void;
+  /** Patch fields of an existing set (e.g. edit reps after a missed rep). */
+  updateSet: (setId: string, patch: Partial<Omit<SetEntry, 'id' | 'sessionId'>>) => void;
   /** Copy an existing set to the end of the log (duplicate-set button). */
   duplicateSet: (setId: string) => void;
   /** Working-set volume in kg. */
@@ -77,6 +79,14 @@ export const useSessionStore = create<SessionState>((set, get) => {
       commit({
         ...active,
         sets: active.sets.filter((s) => s.id !== setId).map((s, index) => ({ ...s, order: index })),
+      });
+    },
+    updateSet: (setId, patch) => {
+      const active = get().active;
+      if (!active) return;
+      commit({
+        ...active,
+        sets: active.sets.map((s) => (s.id === setId ? { ...s, ...patch } : s)),
       });
     },
     duplicateSet: (setId) => {

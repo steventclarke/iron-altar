@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { PixelButton } from '@/ui/button';
 import { EntryDateStepper } from '@/ui/date-stepper';
+import { NavBar } from '@/ui/nav-bar';
 import { Panel } from '@/ui/panel';
 import { Screen } from '@/ui/screen';
 import { RestTimer } from '@/ui/rest-timer';
@@ -11,6 +12,7 @@ import { PixelText } from '@/ui/text';
 import { Fonts, FontSizes, Palette, Spacing } from '@/constants/theme';
 import { exerciseRepository } from '@/data/repositories/exercise-repository';
 import { sessionRepository } from '@/data/repositories/session-repository';
+import { groupSetsByExercise, type ExerciseGroup, type WeightRow } from '@/domain/session';
 import { formatWeight, fromDisplay, UNIT_LABEL } from '@/domain/units';
 import { useProfileStore } from '@/state/profile-store';
 import { useRestTimer } from '@/state/rest-timer-store';
@@ -25,6 +27,7 @@ export default function SessionScreen() {
   const active = useSessionStore((s) => s.active);
   const addSet = useSessionStore((s) => s.addSet);
   const removeSet = useSessionStore((s) => s.removeSet);
+  const updateSet = useSessionStore((s) => s.updateSet);
   const duplicateSet = useSessionStore((s) => s.duplicateSet);
   const setEntryDate = useSessionStore((s) => s.setEntryDate);
   const discard = useSessionStore((s) => s.discard);
@@ -45,6 +48,7 @@ export default function SessionScreen() {
   if (!active) {
     return (
       <Screen>
+        <NavBar />
         <PixelText variant="heading">NO ACTIVE SESSION</PixelText>
         <PixelButton label="Back to Gym" onPress={() => router.back()} />
       </Screen>
@@ -54,6 +58,7 @@ export default function SessionScreen() {
   const volumeKg = useSessionStore.getState().totalVolumeKg();
   const xp = useSessionStore.getState().xpEarned();
   const lastSet = active.sets.length > 0 ? active.sets[active.sets.length - 1] : null;
+  const groups = groupSetsByExercise(active.sets);
 
   const submitSet = () => {
     const parsedWeight = Number.parseFloat(weight || '0');
@@ -89,10 +94,12 @@ export default function SessionScreen() {
 
   return (
     <Screen>
+      <NavBar />
+
       <View style={styles.header}>
         <PixelText variant="heading">SESSION LOG</PixelText>
         <PixelText variant="caption" color={Palette.textSecondary}>
-          {volumeKg.toFixed(0)} kg · {xp.toFixed(0)} XP
+          {formatWeight(volumeKg, unitPref)} tonnage · {xp.toFixed(0)} XP
         </PixelText>
       </View>
 
@@ -175,36 +182,21 @@ export default function SessionScreen() {
         )}
       </Panel>
 
-      {active.sets.length > 0 && (
+      {groups.length > 0 && (
         <Panel>
           <PixelText variant="label" color={Palette.textSecondary}>
             Logged Sets
           </PixelText>
-          {active.sets.map((set) => {
-            const exercise = exerciseRepository.byId(set.exerciseId);
-            return (
-              <View key={set.id} style={styles.setRow}>
-                <PixelText variant="body" style={styles.setText}>
-                  {exercise?.name ?? 'Unknown'} · {formatWeight(set.weightKg, unitPref)} x{' '}
-                  {set.reps}
-                  {set.isWarmup ? ' (warmup)' : ''}
-                  {set.notes ? `\n${set.notes}` : ''}
-                </PixelText>
-                <View style={styles.setActions}>
-                  <Pressable onPress={() => duplicateSet(set.id)} hitSlop={Spacing.two}>
-                    <PixelText variant="label" color={Palette.gold}>
-                      2X
-                    </PixelText>
-                  </Pressable>
-                  <Pressable onPress={() => removeSet(set.id)} hitSlop={Spacing.two}>
-                    <PixelText variant="label" color={Palette.danger}>
-                      X
-                    </PixelText>
-                  </Pressable>
-                </View>
-              </View>
-            );
-          })}
+          {groups.map((group) => (
+            <ExerciseGroupBlock
+              key={group.exerciseId}
+              group={group}
+              unitPref={unitPref}
+              onDuplicate={duplicateSet}
+              onRemove={removeSet}
+              onUpdateReps={(setId, nextReps) => updateSet(setId, { reps: nextReps })}
+            />
+          ))}
         </Panel>
       )}
 
@@ -218,6 +210,125 @@ export default function SessionScreen() {
         }}
       />
     </Screen>
+  );
+}
+
+function ExerciseGroupBlock({
+  group,
+  unitPref,
+  onDuplicate,
+  onRemove,
+  onUpdateReps,
+}: {
+  group: ExerciseGroup;
+  unitPref: 'kg' | 'lb' | 'st';
+  onDuplicate: (setId: string) => void;
+  onRemove: (setId: string) => void;
+  onUpdateReps: (setId: string, reps: number) => void;
+}) {
+  const exercise = exerciseRepository.byId(group.exerciseId);
+  const name = exercise?.name ?? 'Unknown';
+  const count = group.workingSetCount;
+
+  return (
+    <View style={styles.group}>
+      <View style={styles.groupHeader}>
+        <PixelText variant="body" color={Palette.gold} style={styles.setText}>
+          {name}
+        </PixelText>
+        <PixelText variant="caption" color={Palette.textSecondary}>
+          {count} {count === 1 ? 'set' : 'sets'}
+        </PixelText>
+      </View>
+
+      {group.rows.map((row) => (
+        <WeightRowLine
+          key={`${row.weightKg}-${row.isWarmup}`}
+          row={row}
+          unitPref={unitPref}
+          onDuplicate={onDuplicate}
+          onRemove={onRemove}
+          onUpdateReps={onUpdateReps}
+        />
+      ))}
+    </View>
+  );
+}
+
+function WeightRowLine({
+  row,
+  unitPref,
+  onDuplicate,
+  onRemove,
+  onUpdateReps,
+}: {
+  row: WeightRow;
+  unitPref: 'kg' | 'lb' | 'st';
+  onDuplicate: (setId: string) => void;
+  onRemove: (setId: string) => void;
+  onUpdateReps: (setId: string, reps: number) => void;
+}) {
+  return (
+    <View style={styles.row}>
+      <PixelText variant="body" color={row.isWarmup ? Palette.textMuted : Palette.text}>
+        {formatWeight(row.weightKg, unitPref)}
+        {row.isWarmup ? ' (warmup)' : ''}
+      </PixelText>
+
+      <View style={styles.repsRow}>
+        {row.reps.map((repCount, index) => (
+          <RepField
+            key={row.setIds[index]}
+            reps={repCount}
+            onCommit={(next) => onUpdateReps(row.setIds[index], next)}
+          />
+        ))}
+      </View>
+
+      <View style={styles.setActions}>
+        <Pressable onPress={() => onDuplicate(row.setIds[row.setIds.length - 1])} hitSlop={Spacing.two}>
+          <PixelText variant="heading" color={Palette.gold}>
+            +
+          </PixelText>
+        </Pressable>
+        <Pressable onPress={() => onRemove(row.setIds[row.setIds.length - 1])} hitSlop={Spacing.two}>
+          <PixelText variant="label" color={Palette.danger}>
+            X
+          </PixelText>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function RepField({ reps, onCommit }: { reps: number; onCommit: (next: number) => void }) {
+  const [text, setText] = useState(String(reps));
+
+  const commit = () => {
+    const parsed = Number.parseInt(text, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      if (parsed !== reps) onCommit(parsed);
+      setText(String(parsed));
+    } else {
+      setText(String(reps));
+    }
+  };
+
+  return (
+    <View style={styles.repField}>
+      <PixelText variant="caption" color={Palette.textSecondary}>
+        x
+      </PixelText>
+      <TextInput
+        value={text}
+        onChangeText={setText}
+        onBlur={commit}
+        onSubmitEditing={commit}
+        keyboardType="number-pad"
+        selectTextOnFocus
+        style={styles.repInput}
+      />
+    </View>
   );
 }
 
@@ -261,14 +372,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
   },
-  setRow: {
+  group: {
+    gap: Spacing.one,
+    paddingTop: Spacing.two,
+  },
+  groupHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: Palette.border,
+    paddingBottom: Spacing.one,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: Spacing.two,
   },
   setText: {
     flex: 1,
+  },
+  repsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  repField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  repInput: {
+    minWidth: 40,
+    textAlign: 'center',
+    backgroundColor: Palette.void,
+    borderColor: Palette.border,
+    borderWidth: 2,
+    borderRadius: 2,
+    color: Palette.text,
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.md,
+    paddingHorizontal: Spacing.one,
+    paddingVertical: 0,
   },
   setActions: {
     flexDirection: 'row',

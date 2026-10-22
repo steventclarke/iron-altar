@@ -10,7 +10,16 @@ import type {
 /** Storage key for the persisted document. */
 export const DB_KEY = 'iron-altar/db';
 /** Current document schema version — bump when the shape changes. */
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
+
+/** Default rest length (seconds) when the user has not chosen one. */
+export const DEFAULT_REST_SECONDS = 60;
+
+/** User preferences that outlive any single workout. */
+export type Settings = {
+  /** Preferred rest between sets, in seconds; drives the session rest timer. */
+  restSeconds: number;
+};
 
 /** An in-progress workout that has not yet been saved as a completed Session. */
 export type DraftSession = {
@@ -32,6 +41,7 @@ export type DraftSession = {
 export type DatabaseShape = {
   version: number;
   profile: Profile | null;
+  settings: Settings;
   exercises: Exercise[];
   sessions: Session[];
   sets: SetEntry[];
@@ -39,10 +49,15 @@ export type DatabaseShape = {
   draft: DraftSession | null;
 };
 
+export function defaultSettings(): Settings {
+  return { restSeconds: DEFAULT_REST_SECONDS };
+}
+
 export function emptyDatabase(): DatabaseShape {
   return {
     version: DB_VERSION,
     profile: null,
+    settings: defaultSettings(),
     exercises: [],
     sessions: [],
     sets: [],

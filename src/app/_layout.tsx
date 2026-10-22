@@ -13,6 +13,7 @@ import { Palette } from '@/constants/theme';
 import { initializeDatabase } from '@/data/db/database';
 import { seedDatabase } from '@/data/seed/seed';
 import { useProfileStore } from '@/state/profile-store';
+import { useRestTimer } from '@/state/rest-timer-store';
 import { useSessionStore } from '@/state/session-store';
 
 SplashScreen.preventAutoHideAsync();
@@ -28,6 +29,7 @@ export default function RootLayout() {
       seedDatabase();
       useProfileStore.getState().hydrate();
       useSessionStore.getState().hydrate();
+      useRestTimer.getState().hydrate();
       if (!cancelled) setDbReady(true);
     })();
     return () => {
