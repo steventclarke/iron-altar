@@ -41,7 +41,7 @@ export function ValueStepper({
         {label}
       </PixelText>
 
-      <StepArrow label="\u25B2" disabled={!canIncrement} onPress={() => bump(step)} />
+      <StepArrow label="▲" disabled={!canIncrement} onPress={() => bump(step)} />
 
       <View style={styles.valueBox}>
         <PixelText variant="title" color={Palette.gold} style={styles.valueText}>
@@ -49,7 +49,7 @@ export function ValueStepper({
         </PixelText>
       </View>
 
-      <StepArrow label="\u25BC" disabled={!canDecrement} onPress={() => bump(-step)} />
+      <StepArrow label="▼" disabled={!canDecrement} onPress={() => bump(-step)} />
     </View>
   );
 }
@@ -68,7 +68,11 @@ function StepArrow({
       onPress={onPress}
       disabled={disabled}
       hitSlop={Spacing.two}
-      style={({ pressed }) => [styles.arrow, pressed && styles.pressed, disabled && styles.disabled]}
+      style={({ pressed }) => [
+        styles.arrow,
+        pressed && styles.pressed,
+        disabled && styles.disabled,
+      ]}
     >
       <PixelText variant="body" color={Palette.text}>
         {label}

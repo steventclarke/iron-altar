@@ -3,6 +3,7 @@ import { StyleSheet, TextInput, View } from 'react-native';
 
 import { Avatar } from '@/ui/avatar';
 import { PixelButton } from '@/ui/button';
+import { NavBar } from '@/ui/nav-bar';
 import { Panel } from '@/ui/panel';
 import { Screen } from '@/ui/screen';
 import { PixelText } from '@/ui/text';
@@ -22,7 +23,7 @@ export default function ProfileScreen() {
 
   if (!profile) {
     return (
-      <Screen>
+      <Screen header={<NavBar />}>
         <PixelText variant="heading">FORGE YOUR PROFILE</PixelText>
         <Panel>
           <PixelText variant="label" color={Palette.textSecondary}>
@@ -44,7 +45,7 @@ export default function ProfileScreen() {
   const stage = stageInfoForXp(profile.xp);
 
   return (
-    <Screen>
+    <Screen header={<NavBar />}>
       <PixelText variant="heading">PROFILE</PixelText>
 
       <Panel highlight style={styles.avatarPanel}>

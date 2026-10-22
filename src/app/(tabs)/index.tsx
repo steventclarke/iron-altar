@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/ui/avatar';
 import { PixelButton } from '@/ui/button';
+import { NavBar } from '@/ui/nav-bar';
 import { Panel } from '@/ui/panel';
 import { Screen } from '@/ui/screen';
 import { PixelText } from '@/ui/text';
@@ -19,7 +20,7 @@ export default function DungeonGymScreen() {
 
   if (!profile) {
     return (
-      <Screen>
+      <Screen header={<NavBar />}>
         <PixelText variant="title">IRON ALTAR</PixelText>
         <Panel highlight>
           <PixelText variant="body" color={Palette.textSecondary}>
@@ -49,7 +50,7 @@ export default function DungeonGymScreen() {
   };
 
   return (
-    <Screen>
+    <Screen header={<NavBar />}>
       <PixelText variant="title">DUNGEON GYM</PixelText>
 
       <Panel highlight style={styles.avatarPanel}>

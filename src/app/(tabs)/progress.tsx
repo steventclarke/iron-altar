@@ -2,6 +2,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { NavBar } from '@/ui/nav-bar';
 import { Panel } from '@/ui/panel';
 import { Screen } from '@/ui/screen';
 import { PixelText } from '@/ui/text';
@@ -77,7 +78,7 @@ export default function ProgressScreen() {
   };
 
   return (
-    <Screen>
+    <Screen header={<NavBar />}>
       <PixelText variant="heading">PROGRESS</PixelText>
 
       {summary.lifts.map((lift) => (

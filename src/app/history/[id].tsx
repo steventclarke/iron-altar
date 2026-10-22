@@ -22,8 +22,7 @@ export default function SessionDetailScreen() {
 
   if (!session) {
     return (
-      <Screen>
-        <NavBar />
+      <Screen header={<NavBar />}>
         <PixelText variant="heading">SESSION NOT FOUND</PixelText>
         <PixelButton label="Back to History" onPress={() => router.back()} />
       </Screen>
@@ -34,9 +33,7 @@ export default function SessionDetailScreen() {
   const groups = groupSetsByExercise(sets);
 
   return (
-    <Screen>
-      <NavBar />
-
+    <Screen header={<NavBar />}>
       <View style={styles.header}>
         <PixelText variant="heading">{formatCalendarDate(session.date)}</PixelText>
         <PixelText variant="caption" color={Palette.textSecondary}>

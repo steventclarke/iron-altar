@@ -2,6 +2,7 @@ import { useFocusEffect, router } from 'expo-router';
 import { useCallback } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { NavBar } from '@/ui/nav-bar';
 import { Panel } from '@/ui/panel';
 import { Screen } from '@/ui/screen';
 import { PixelText } from '@/ui/text';
@@ -23,7 +24,7 @@ export default function HistoryScreen() {
   );
 
   return (
-    <Screen>
+    <Screen header={<NavBar />}>
       <PixelText variant="heading">WORKOUT HISTORY</PixelText>
 
       {summaries.length === 0 ? (

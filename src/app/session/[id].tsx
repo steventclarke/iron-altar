@@ -47,8 +47,7 @@ export default function SessionScreen() {
 
   if (!active) {
     return (
-      <Screen>
-        <NavBar />
+      <Screen header={<NavBar />}>
         <PixelText variant="heading">NO ACTIVE SESSION</PixelText>
         <PixelButton label="Back to Gym" onPress={() => router.back()} />
       </Screen>
@@ -93,9 +92,7 @@ export default function SessionScreen() {
   };
 
   return (
-    <Screen>
-      <NavBar />
-
+    <Screen header={<NavBar />}>
       <View style={styles.header}>
         <PixelText variant="heading">SESSION LOG</PixelText>
         <PixelText variant="caption" color={Palette.textSecondary}>
@@ -286,12 +283,18 @@ function WeightRowLine({
       </View>
 
       <View style={styles.setActions}>
-        <Pressable onPress={() => onDuplicate(row.setIds[row.setIds.length - 1])} hitSlop={Spacing.two}>
+        <Pressable
+          onPress={() => onDuplicate(row.setIds[row.setIds.length - 1])}
+          hitSlop={Spacing.two}
+        >
           <PixelText variant="heading" color={Palette.gold}>
             +
           </PixelText>
         </Pressable>
-        <Pressable onPress={() => onRemove(row.setIds[row.setIds.length - 1])} hitSlop={Spacing.two}>
+        <Pressable
+          onPress={() => onRemove(row.setIds[row.setIds.length - 1])}
+          hitSlop={Spacing.two}
+        >
           <PixelText variant="label" color={Palette.danger}>
             X
           </PixelText>

@@ -57,9 +57,7 @@ export default function BodyWeightScreen() {
   const formatChartWeight = (value: number) => `${Number(value.toFixed(1))}${UNIT_LABEL[unitPref]}`;
 
   return (
-    <Screen>
-      <NavBar />
-
+    <Screen header={<NavBar />}>
       <View style={styles.header}>
         <PixelText variant="heading">BODY WEIGHT</PixelText>
         {latest && (
