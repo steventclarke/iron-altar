@@ -79,8 +79,8 @@ as you train. Must run on iOS, Android, and web.
 - **Testing:** Jest + React Native Testing Library. (Maestro e2e later.)
 - **Web deploy:** `expo export --platform web` (`web.output: "single"` SPA) to a private
   **AWS S3** origin behind **CloudFront**, with **Route 53 + ACM** for
-  `stevenclarke.dev`; provisioned with **Terraform** and deployed by **GitHub Actions**.
-  EAS Hosting / Vercel / Netlify remain simpler fallbacks (section 7).
+  `stevenclarke.dev`; provisioned with **AWS CDK v2 (TypeScript)** and deployed by
+  **GitHub Actions** (section 7).
 - **Mobile releases:** **EAS Build** production `.ipa` / `.aab`, archived with version
   metadata and checksums in a private, versioned **S3** bucket for future App Store /
   Play Store publishing workflows.
@@ -185,13 +185,14 @@ Notes:
   "Log Past Workout" is removed in favor of the session date selector (#21); body weight is
   editable on Profile (#22); "Decaying" only appears after a full week without training (#23).
 - **P7 Hosting & Ship (next):**
-  - **P7.1 AWS web hosting + CI/CD:** Terraform-managed private S3 origin, CloudFront,
-    Route 53, ACM, and SSM outputs; GitHub Actions OIDC deployment on push to `main`;
+  - **P7.1 Hosting & domain platform:** dedicated **AWS CDK v2 (TypeScript)** infrastructure
+    project; public Route 53 zone delegated from GoDaddy; shared apex + wildcard ACM
+    certificate; per-app S3/CloudFront stacks; GitHub OIDC deployment on push to `main`;
     SPA fallback, cache/security headers, deployment metadata, and rollback path. See
     section 7.
   - **P7.2 Mobile release archive:** EAS production builds for iOS/Android; upload signed
-    `.ipa`/`.aab` plus version metadata and SHA-256 checksums to a private, versioned S3
-    bucket. Store submission remains a future workflow.
+    `.ipa`/`.aab` plus version metadata and SHA-256 checksums to a private, versioned,
+    CDK-managed S3 bucket. Store submission remains a future workflow.
   - **P7.3 Polish & launch:** responsive web, accessibility, empty states, privacy/support
     pages, store listing metadata, and text-file import (#4, post-MVP candidate).
 
@@ -226,6 +227,7 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
 | 21  | Remove the "Log Past Workout" button; retroactive logging can start from Start Workout and use the session date selector.                                                               | **P6.2** (Session/Profile IA & Stats) — shipped                 | Start Workout opens the session log, where `EntryDateStepper` already sets a past performed date (P3/#3). The redundant entry point is gone.                                                                                                                                                                                                       |
 | 22  | Make body weight editable on the Profile page.                                                                                                                                          | **P6.2** (Profile stats) — shipped                              | Add a weigh-in editor to Profile's training panel in preferred units. The latest entry is updated in place via `bodyWeightRepository.update`; with no history, the first entry is added. Progress keeps the chart/history and dated entries.                                                                                                       |
 | 23  | The trend should only say "Decaying" once a week or more has passed since the last logged workout.                                                                                      | **P6.2** (Gamification) — shipped                               | `trainingSummary` no longer compares recent XP with weekly decay. `down` is gated on `weeksSince(lastTrainingDate) >= 1`; otherwise `up` when the latest week has training XP and `flat` with no sessions.                                                                                                                                         |
+| 24  | Use **AWS CDK in TypeScript** for all infrastructure as code.                                                                                                                           | **P7.1** (Hosting) — planned                                    | Structural. Replaces Terraform. A dedicated CDK app owns the shared Route 53 zone, apex + wildcard ACM certificate, GitHub OIDC roles, and per-app static-site stacks. Portfolio and Iron Altar each get their own S3/CloudFront distribution; app repos only deploy content.                                                                      |
 
 ### Triaged into phases
 
@@ -251,10 +253,10 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
 - **P6.2 Session/Profile IA & Stats (done):** lean Session page with Start/Resume only
   (#20); "Log Past Workout" removed in favor of the date selector (#21); Profile body-weight
   editing (#22); week-gated decaying trend (#23).
-- **P7 Hosting & Ship:** P7.1 AWS web hosting + GitHub Actions; P7.2 EAS mobile artifacts
-  archived to versioned S3; P7.3 responsive web, accessibility, empty states,
-  privacy/support pages, store listing metadata, and text-file import (#4) — post-MVP
-  candidate; confirm format before building.
+- **P7 Hosting & Ship:** P7.1 AWS CDK web/domain platform + GitHub Actions (#24); P7.2 EAS
+  mobile artifacts archived to versioned S3; P7.3 responsive web, accessibility, empty
+  states, privacy/support pages, store listing metadata, and text-file import (#4) —
+  post-MVP candidate; confirm format before building.
 
 ## 7. Hosting & Release Infrastructure (P7.1/P7.2)
 
@@ -263,49 +265,63 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
 - **Web:** private **S3** origin served through **CloudFront** (Origin Access Control),
   with **Route 53** DNS and an **ACM** certificate. This keeps the app on AWS, is cheap at
   portfolio traffic levels, and gives full control over caching, headers, and rollback.
-- **Infrastructure as code:** **Terraform**, with remote state in S3 (versioned, encrypted,
-  public access blocked) and S3-native state locking (Terraform 1.10+) or DynamoDB locking.
+- **Infrastructure as code:** **AWS CDK v2 in TypeScript**, in a dedicated
+  `stevenclarke-infra` project rather than the portfolio or app repo. CDK bootstraps each
+  account/region once and uses CloudFormation for state; there is no Terraform backend.
+- **Ownership:** the platform CDK app owns the Route 53 zone, apex + wildcard ACM
+  certificate, DNS records, GitHub OIDC roles, and shared constructs. The portfolio and
+  each application are separate `StaticSiteStack` instances with their own S3 bucket and
+  CloudFront distribution. App repositories only build content and deploy it; they do not
+  create shared DNS or certificate resources.
 - **CI/CD:** **GitHub Actions** with **GitHub OIDC -> AWS IAM roles**. No long-lived AWS
-  access keys in GitHub. Every push to `main` runs checks and deploys the web build.
+  access keys in GitHub. App pushes deploy content; infrastructure changes run
+  `cdk diff`/`cdk deploy` from the infrastructure workflow.
 - **Mobile builds:** **EAS Build** production profile (`store` distribution), producing a
   signed `.ipa` and `.aab`. A manual/tag-triggered workflow archives them with version
-  metadata and checksums in a private, versioned S3 release bucket.
+  metadata and checksums in a private, versioned, CDK-managed S3 release bucket.
 - **Publishing:** out of scope for P7.2. A future workflow can read a release from S3 and
   call `eas submit` (or the store CLIs). Apple/Google submission credentials stay in
   GitHub/EAS secrets, never in the artifact bucket.
-- **Domain:** **`iron-altar.stevenclarke.dev`** (confirmed), using the existing Route 53
-  hosted zone; keep the portfolio at the apex or another hostname. Use `us-east-1` for ACM
-  (required by CloudFront) and the AWS resources.
+- **Domain:** **`iron-altar.stevenclarke.dev`** (confirmed). GoDaddy remains the registrar;
+  CDK creates the `stevenclarke.dev` Route 53 hosted zone, then the nameservers are
+  delegated once at GoDaddy. The apex serves the portfolio; each app gets its own
+  subdomain. Use `us-east-1` for ACM (required by CloudFront) and the AWS resources.
 
-### Alternatives considered
-
-| Area             | Recommended                 | Alternative                                  | Trade-off                                                                                                                              |
-| ---------------- | --------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Web hosting      | S3 + CloudFront + Terraform | **EAS Hosting**                              | Fastest path, managed TLS/CDN, but custom domains require a paid EAS plan and it does not exercise the AWS/IaC setup.                  |
-| Web hosting      | S3 + CloudFront + Terraform | **AWS Amplify Hosting**                      | Git-connected and simpler, but less explicit IaC and less control than S3/CloudFront for a static SPA.                                 |
-| Web hosting      | S3 + CloudFront + Terraform | **Vercel / Netlify**                         | Excellent static DX and previews, but not AWS-based and unnecessary for this portfolio setup.                                          |
-| IaC              | Terraform                   | **AWS CDK**                                  | CDK is TypeScript-native and AWS-focused, but Terraform is more portable and easier to keep provider-neutral.                          |
-| CI/CD            | GitHub Actions + OIDC       | **EAS Workflows**                            | Great for mobile build/submit jobs, but AWS web deployment and S3 archiving still need custom jobs; GitHub Actions keeps one pipeline. |
-| CI/CD            | GitHub Actions + OIDC       | **AWS CodePipeline / CodeBuild**             | More AWS-native, but heavier to configure and less convenient alongside the GitHub repo.                                               |
-| Mobile builds    | EAS Build                   | GitHub macOS runners / local Xcode + Gradle  | Full control, but credential management, macOS cost, and maintenance are much higher.                                                  |
-| Artifact archive | Private versioned S3 bucket | EAS-hosted builds / GitHub Actions artifacts | Convenient, but not a durable, version-addressable release archive you control (Actions artifacts expire by default).                  |
-
-**Bottom line:** the proposed Terraform + GitHub Actions + S3/CloudFront setup is the right
-fit for an AWS-hosted portfolio project. If speed to a public URL matters more than AWS/IaC,
-EAS Hosting is the simplest fallback.
-
-### Target AWS/Terraform layout
+### Target AWS CDK layout
 
 ```
-infra/
-  bootstrap/        # applied once by an AWS admin; not run on every deploy
-    # Terraform state bucket + lock, GitHub OIDC provider, deploy IAM roles, budget alerts
-  web/
-    # ACM cert (us-east-1), Route 53 record, private site bucket, CloudFront + OAC,
-    # response-headers policy, SPA fallback, SSM outputs
-  releases/
-    # private/versioned/encrypted S3 artifact bucket, lifecycle, SSM outputs
+stevenclarke-infra/
+  bin/infra.ts                    # CDK app entrypoint
+  lib/platform/dns-stack.ts       # Route 53 zone, migrated MX/TXT/apex records
+  lib/platform/cert-stack.ts      # us-east-1 stevenclarke.dev + *.stevenclarke.dev
+  lib/platform/oidc-stack.ts      # GitHub OIDC provider + scoped deploy roles
+  lib/apps/portfolio-stack.ts     # apex S3 + CloudFront
+  lib/apps/iron-altar-stack.ts    # iron-altar S3 + CloudFront
+  lib/constructs/static-site.ts   # shared S3/OAC/CloudFront/alias/cache/header setup
+  test/                           # CDK assertions / cdk-nag checks
 ```
+
+- **Deployment sequence:** deploy `DnsStack`, copy existing GoDaddy records, delegate the
+  nameservers at GoDaddy, verify public resolution, then deploy `CertStack` (ACM DNS
+  validation) and the app stacks. Requesting the certificate before delegation would leave
+  validation pending.
+- **Shared certificate:** one `us-east-1` certificate for `stevenclarke.dev` +
+  `*.stevenclarke.dev`, reused by every CloudFront distribution in the account. The
+  wildcard covers one subdomain level; nested names such as
+  `api.iron-altar.stevenclarke.dev` would need another certificate or a different name.
+- **App stack per site:** each app is an independent CloudFront distribution with its own
+  cache policy, response-headers policy, SPA fallback, logging, and invalidation. Do not
+  multiplex all apps behind one distribution unless a shared deployment/cache model is
+  explicitly wanted.
+- **Portfolio at the apex:** use a Route 53 alias A/AAAA record to CloudFront (CNAME is not
+  valid at the zone apex). Its certificate must include `stevenclarke.dev`; the shared
+  apex + wildcard certificate does.
+- **Adding an app:** add another `StaticSiteStack` with its subdomain and bucket, deploy,
+  then add its URL to the portfolio. App CI receives only the bucket/distribution details
+  it needs.
+- **Separate accounts later:** if an app moves to another AWS account, it needs its own
+  `us-east-1` certificate and CloudFront distribution; the platform CDK app still owns the
+  parent DNS record pointing at it.
 
 - **Site bucket:** block all public access, versioning on, SSE enabled, no static website
   endpoint. CloudFront uses OAC.
@@ -316,40 +332,44 @@ infra/
   `index.html` and `deployment.json` are `no-cache`; other files use a short cache.
 - **Rollback:** redeploy a previous commit (site bucket versioning provides a secondary
   safety net). A manual workflow dispatch can accept a commit SHA for emergency rollback.
-- **SSM outputs:** bucket names, CloudFront distribution ID, and hosted URL are published
-  to Parameter Store so the GitHub Actions deploy job does not need Terraform state access.
+- **SSM outputs:** CDK publishes bucket names, CloudFront distribution ID, and hosted URL
+  to Parameter Store so app deploy workflows do not need CloudFormation/CDK access.
 - **AWS baseline:** root MFA, IAM Identity Center (no root use), CloudTrail, and an AWS
   Budget with alerts (e.g. $10/month) before exposing the app.
 
 ### Deployment workflows
 
-1. **Pull request CI** (`ci.yml`): Node 24 via `actions/setup-node` with npm cache,
-   `npm ci`, formatting check, `tsc --noEmit`, Expo lint, and `expo export -p web`
-   (upload the export only as a temporary CI artifact if useful). For `infra/**` changes,
-   also run `terraform fmt -check`, `terraform validate`, and `terraform plan` in a
-   read-only plan role.
-2. **Main deploy** (`deploy.yml`, on push to `main`): checks -> assume the infra role for
-   the web/releases stacks (Terraform apply, or skip when no infra changes) -> assume the
-   web-deploy role -> `expo export -p web` -> sync files in three passes: hashed
-   `/_expo/static/*` with `immutable`, other assets with a short cache, and
-   `index.html`/`deployment.json` with `no-cache`; delete removed assets -> invalidate
-   CloudFront `/*`. Use a concurrency group so two deploys never overlap. The first deploy
-   is run manually after bootstrap; subsequent pushes are automatic.
-3. **Mobile archive** (`build-mobile.yml`, `workflow_dispatch` and/or `v*` tags): run
+1. **App PR CI** (`ci.yml` in the app repository): Node 24 via `actions/setup-node` with
+   npm cache, `npm ci`, formatting check, `tsc --noEmit`, Expo lint, and
+   `expo export -p web` (upload the export only as a temporary CI artifact if useful).
+2. **Infra validation** (pull request workflow in `stevenclarke-infra`): Node 24,
+   `npm ci`, `npm run build`, `npx cdk synth`, `npx cdk diff`, and optional `cdk-nag`
+   checks, using a read-only diff role via GitHub OIDC.
+3. **Infra deploy** (`deploy-infra.yml`, on push to `main` or manual dispatch): assume the
+   infra role -> `npx cdk diff` -> `npx cdk deploy --all --require-approval never` (or
+   deploy selected stacks). The initial DnsStack deploy and GoDaddy nameserver change are
+   manual; see the implementation sequence.
+4. **App deploy** (`deploy.yml`, on push to `main`): checks -> assume the app deploy role ->
+   `expo export -p web` -> sync files in three passes: hashed `/_expo/static/*` with
+   `immutable`, other assets with a short cache, and `index.html`/`deployment.json` with
+   `no-cache`; delete removed assets -> invalidate CloudFront `/*`. Use a concurrency group
+   so two deploys never overlap. The first deploy is run manually after bootstrap;
+   subsequent pushes are automatic.
+5. **Mobile archive** (`build-mobile.yml`, `workflow_dispatch` and/or `v*` tags): run
    `npx eas-cli@latest build --platform all --profile production --non-interactive --wait --json`,
    parse each build's `artifacts.applicationArchiveUrl` (fall back to
    `eas build:view <id> --json`), download the `.ipa`/`.aab`, compute SHA-256, upload the
    artifact and `metadata.json` to S3, then write the release manifest. (`eas build:download`
    is for simulator/emulator builds, not store artifacts.) Do **not** auto-submit to stores
    in this phase.
-4. **Future publish workflow** (`publish-mobile.yml`): select a release by version/build
+6. **Future publish workflow** (`publish-mobile.yml`): select a release by version/build
    from S3, download it, and run `eas submit --path ...` or the store CLIs. Requires
    App Store Connect API and Google Play service-account credentials stored as protected
    GitHub environment secrets or in EAS.
 
 Use GitHub `production` / `mobile-release` environments, branch protection requiring CI,
 and OIDC trust policies restricted to this repository and `refs/heads/main` (or the mobile
-release tag). Separate roles keep web deploys, infra changes, and artifact writes scoped.
+release tag). Separate roles keep app deploys, CDK/infra changes, and artifact writes scoped.
 
 ### Version and artifact contract
 
@@ -375,39 +395,50 @@ release tag). Separate roles keep web deploys, infra changes, and artifact write
 ### Confirmed decisions
 
 1. **Hostname:** `iron-altar.stevenclarke.dev`.
-2. **DNS:** `stevenclarke.dev` is already a Route 53 hosted zone; Terraform manages the
-   subdomain alias and ACM validation records.
+2. **Domain:** GoDaddy remains the registrar; CDK creates the `stevenclarke.dev` Route 53
+   hosted zone, followed by a one-time nameserver delegation at GoDaddy. The portfolio
+   owns the apex; each app gets its own subdomain.
 3. **Bundle/package IDs:** `dev.stevenclarke.ironaltar` for both iOS and Android.
 4. **Mobile build trigger:** `v*` tag push or manual workflow dispatch.
 5. **Region:** `us-east-1` for ACM/CloudFront and both S3 buckets.
 6. **Web deploy trigger:** every push to `main`, after checks pass.
+7. **IaC:** **AWS CDK v2 in TypeScript** in a dedicated infrastructure project; no
+   Terraform.
+8. **Ownership:** the platform CDK app owns the shared Route 53 zone, apex + wildcard ACM
+   certificate, DNS records, and OIDC roles. The portfolio and each app have their own
+   S3/CloudFront distribution; app repos only deploy content.
+9. **Hosting:** S3 + CloudFront + CDK. EAS Hosting is not part of the plan.
+10. **Retention:** keep all production mobile artifacts indefinitely.
+11. **Store publishing:** optional for now; Apple/Google accounts are not created yet, but
+    the artifact layout keeps that path open.
+12. **Artifact backfill:** start with the first production release; do not rebuild existing
+    builds.
 
 ### Open decisions
 
-1. **Retention:** keep all production mobile artifacts indefinitely (recommended), or
-   expire after a set period?
-2. **Store accounts:** confirm whether an Apple Developer Program membership and Google
-   Play Console account already exist; create them before P7.2 store-artifact work.
-3. **EAS plan/cost:** confirm the Expo/EAS account and whether the free tier is acceptable
+1. **EAS plan/cost:** confirm the Expo/EAS account and whether the free tier is acceptable
    for build minutes; paid plans add concurrency and priority.
-4. **Artifact backfill:** whether to rebuild/archive existing builds after setup, or start
-   with the first production release.
+2. **Repo topology:** use a separate `stevenclarke-infra` repository (recommended) or an
+   `infra/` top-level project in a monorepo.
 
 ### Actions Steven must take
 
 - [ ] AWS: enable root MFA, create an admin via IAM Identity Center, enable CloudTrail,
       create a budget alert, and confirm the target account ID (`us-east-1`).
-- [ ] DNS/domain: provide the Route 53 hosted zone ID for `stevenclarke.dev` and grant
-      Terraform permission to manage the `iron-altar` record and ACM validation records.
+- [ ] DNS/domain: inventory the current GoDaddy records (MX/TXT/A/CNAME, including the
+      portfolio), approve creating the Route 53 hosted zone, and update the GoDaddy
+      nameservers once the zone’s four NS records are ready. Keep domain lock and 2FA on.
 - [ ] GitHub: protect `main`, require CI, create `production` and `mobile-release`
-      environments, and provide the repository for OIDC trust.
+      environments, and approve OIDC trust for the app and infrastructure repositories.
 - [ ] Expo/EAS: create/sign in to the Expo account, run `eas init` (or provide the project
       ID), choose an EAS organization, and create an `EXPO_TOKEN` for GitHub Actions.
-- [ ] Apple: enroll in the Apple Developer Program, accept agreements, create the App Store
-      Connect app record, and create an App Store Connect API key for future submissions.
-- [ ] Google: create the Play Console app record, complete developer verification, and
-      create a service account with Play Developer API access for future submissions.
-- [ ] Store assets (can follow after the first web deploy): privacy policy URL, support URL,
+- [ ] Apple (optional, only if publishing): enroll in the Apple Developer Program, accept
+      agreements, create the App Store Connect app record, and create an App Store Connect
+      API key for future submissions.
+- [ ] Google (optional, only if publishing): create the Play Console app record, complete
+      developer verification, and create a service account with Play Developer API access
+      for future submissions.
+- [ ] Store assets (optional, after deciding to publish): privacy policy URL, support URL,
       screenshots, descriptions, data-safety/app-privacy answers, content rating, and
       encryption/export-compliance declaration.
 - [ ] Confirm EAS-managed signing is acceptable; otherwise provide existing Android
@@ -417,15 +448,20 @@ release tag). Separate roles keep web deploys, infra changes, and artifact write
 
 ### Implementation sequence
 
-1. **Bootstrap:** apply `infra/bootstrap` manually with an AWS admin; create state storage,
-   OIDC provider, roles, and budget. Verify GitHub can assume the roles.
-2. **Web infrastructure:** apply `infra/web` and `infra/releases`; validate certificate,
-   DNS, SPA deep links, headers, and cache behavior. Run the first export/sync manually.
-3. **Automate:** add PR CI and the main deploy workflow; verify a push to `main` updates
-   S3/CloudFront and a failed check blocks deploy.
-4. **Mobile:** add `eas.json`, identifiers, remote version source, production profile, and
-   signing; run the mobile archive workflow and verify artifact + metadata layout.
-5. **Launch:** add P7.3 polish, privacy/support pages, and store metadata. Build the future
+1. **CDK bootstrap:** create the dedicated `stevenclarke-infra` TypeScript project, then run
+   `npx cdk bootstrap` once for the target account/region. Add the GitHub OIDC stack and IAM
+   roles.
+2. **DNS:** deploy `DnsStack` to create the public hosted zone, migrate the existing GoDaddy
+   records, set the four Route 53 nameservers at GoDaddy, and verify public resolution.
+3. **Web platform:** deploy `CertStack` (apex + wildcard certificate), then the
+   `StaticSiteStack` for the portfolio and Iron Altar. Validate HTTPS, apex/subdomain
+   aliases, SPA deep links, headers, and cache behavior. Run the first export/sync manually.
+4. **Automate:** add CDK synth/diff/deploy workflows and the app deploy workflow; verify a
+   push to `main` updates S3/CloudFront and a failed check blocks deploy.
+5. **Mobile:** add `eas.json`, identifiers, remote version source, production profile, and
+   signing; create the CDK release bucket; run the mobile archive workflow and verify the
+   artifact + metadata layout.
+6. **Launch:** add P7.3 polish, privacy/support pages, and store metadata. Build the future
    `publish-mobile.yml` only when ready to submit.
 
 **Out of scope for P7.1/P7.2:** PR preview URLs, multi-region, WAF, OTA updates, account
