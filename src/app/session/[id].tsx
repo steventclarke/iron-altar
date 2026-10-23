@@ -77,7 +77,7 @@ export default function SessionScreen() {
           ) : (
             <>
               <PixelText variant="heading">NO ACTIVE SESSION</PixelText>
-              <PixelButton label="Back to Gym" onPress={() => router.back()} />
+              <PixelButton label="Back to Session" onPress={() => router.back()} />
             </>
           )}
         </Screen>

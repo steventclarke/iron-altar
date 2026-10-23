@@ -11,7 +11,7 @@ export default function TabsLayout() {
         tabBarStyle: { display: 'none' },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'GYM' }} />
+      <Tabs.Screen name="index" options={{ title: 'SESSION' }} />
       <Tabs.Screen name="history" options={{ title: 'HISTORY' }} />
       <Tabs.Screen name="progress" options={{ title: 'PROGRESS' }} />
       <Tabs.Screen name="profile" options={{ title: 'PROFILE' }} />

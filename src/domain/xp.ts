@@ -103,14 +103,3 @@ export function isStreakAlive(lastDateIso: string | null, now: Date = new Date()
 }
 
 export type XpTrend = 'up' | 'down' | 'flat';
-
-/**
- * Overall XP trend over the recent window: net weekly XP gained vs weekly decay.
- * Positive net => trending up (avatar growing); negative => trending down (decaying).
- */
-export function xpTrend(recentXpGain: number): XpTrend {
-  const net = recentXpGain - X_PER_WEEK_DECAY;
-  if (net > 0) return 'up';
-  if (net < 0) return 'down';
-  return 'flat';
-}

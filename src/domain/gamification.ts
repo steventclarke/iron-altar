@@ -1,6 +1,6 @@
 import type { CalendarDate, Session } from '@/domain/types';
 import { addCalendarDays, toCalendarDate } from '@/domain/date';
-import { applyDecay, weeksSince, xpTrend, type XpTrend } from '@/domain/xp';
+import { applyDecay, weeksSince, type XpTrend } from '@/domain/xp';
 
 /** Monday of the calendar week containing `date`. */
 export function weekStart(date: CalendarDate): CalendarDate {
@@ -41,7 +41,7 @@ export type TrainingSummary = {
   trend: XpTrend;
 };
 
-/** Roll up completed sessions into the streak + trend shown on the Gym/Profile. */
+/** Roll up completed sessions into the streak + trend shown on the Profile. */
 export function trainingSummary(sessions: Session[], now: Date = new Date()): TrainingSummary {
   const completed = sessions.filter((session) => session.completed);
   const dates = completed.map((session) => session.date).sort();
@@ -50,12 +50,17 @@ export function trainingSummary(sessions: Session[], now: Date = new Date()): Tr
   const recentXpGain = completed
     .filter((session) => session.date >= windowStart)
     .reduce((total, session) => total + session.xpEarned, 0);
+  const weeksIdle = lastTrainingDate ? weeksSince(lastTrainingDate, now) : 0;
+
+  let trend: XpTrend = 'flat';
+  if (lastTrainingDate && weeksIdle >= 1) trend = 'down';
+  else if (recentXpGain > 0) trend = 'up';
 
   return {
     streakWeeks: streakWeeks(dates, now),
     lastTrainingDate,
     recentXpGain,
-    trend: completed.length === 0 ? 'flat' : xpTrend(recentXpGain),
+    trend,
   };
 }
 

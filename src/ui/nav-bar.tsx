@@ -10,7 +10,7 @@ type NavLink = {
 };
 
 const NAV_LINKS: NavLink[] = [
-  { label: 'GYM', href: '/' },
+  { label: 'SESSION', href: '/' },
   { label: 'HISTORY', href: '/history' },
   { label: 'PROGRESS', href: '/progress' },
   { label: 'PROFILE', href: '/profile' },

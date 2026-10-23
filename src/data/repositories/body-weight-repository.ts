@@ -24,6 +24,17 @@ export const bodyWeightRepository = {
     });
   },
 
+  update(id: string, weightKg: number): BodyWeightEntry | null {
+    return mutate((db) => {
+      const index = db.bodyWeights.findIndex((entry) => entry.id === id);
+      if (index === -1) return null;
+
+      const entry = { ...db.bodyWeights[index], weightKg };
+      db.bodyWeights[index] = entry;
+      return entry;
+    });
+  },
+
   remove(id: string): void {
     mutate((db) => {
       db.bodyWeights = db.bodyWeights.filter((e) => e.id !== id);

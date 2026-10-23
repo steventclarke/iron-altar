@@ -15,7 +15,7 @@ import { formatCalendarDate } from '@/domain/date';
 import { trainingSummary, trendDisplay } from '@/domain/gamification';
 import { workingSetsByExercise } from '@/domain/progress';
 import type { UnitPreference } from '@/domain/types';
-import { formatWeight } from '@/domain/units';
+import { formatWeight, fromDisplay, toDisplay, UNIT_LABEL } from '@/domain/units';
 import { stageInfoForXp, X_PER_WEEK_DECAY } from '@/domain/xp';
 import { useProfileStore } from '@/state/profile-store';
 
@@ -29,8 +29,14 @@ function loadStats() {
   return {
     summary: trainingSummary(sessionRepository.all()),
     totalWorkingSets: Object.values(counts).reduce((total, count) => total + count, 0),
+    bodyWeightId: bodyWeight?.id ?? null,
     bodyWeightKg: bodyWeight?.weightKg ?? null,
   };
+}
+
+function weightInputValue(weightKg: number | null, unit: UnitPreference): string {
+  if (weightKg === null) return '';
+  return String(Number(toDisplay(weightKg, unit).toFixed(1)));
 }
 
 export default function ProfileScreen() {
@@ -40,11 +46,18 @@ export default function ProfileScreen() {
   const reset = useProfileStore((s) => s.reset);
   const [name, setName] = useState('');
   const [stats, setStats] = useState(loadStats);
+  const [weightInput, setWeightInput] = useState(() =>
+    weightInputValue(stats.bodyWeightKg, profile?.unitPref ?? 'kg'),
+  );
+  const [weightError, setWeightError] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      setStats(loadStats());
-    }, []),
+      const next = loadStats();
+      setStats(next);
+      setWeightInput(weightInputValue(next.bodyWeightKg, profile?.unitPref ?? 'kg'));
+      setWeightError(null);
+    }, [profile?.unitPref]),
   );
 
   if (!profile) {
@@ -80,6 +93,25 @@ export default function ProfileScreen() {
   const xpToNext =
     stage.nextThreshold === null ? null : Math.ceil(stage.nextThreshold - profile.xp);
 
+  const saveBodyWeight = () => {
+    const parsed = Number.parseFloat(weightInput);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setWeightError(`Enter a weight above 0 ${UNIT_LABEL[profile.unitPref]}.`);
+      return;
+    }
+
+    const weightKg = fromDisplay(parsed, profile.unitPref);
+    const updated = stats.bodyWeightId
+      ? bodyWeightRepository.update(stats.bodyWeightId, weightKg)
+      : null;
+    if (!updated) bodyWeightRepository.add(weightKg);
+
+    const next = loadStats();
+    setStats(next);
+    setWeightInput(weightInputValue(next.bodyWeightKg, profile.unitPref));
+    setWeightError(null);
+  };
+
   return (
     <Screen header={<NavBar />}>
       <PixelText variant="heading">PROFILE</PixelText>
@@ -110,12 +142,6 @@ export default function ProfileScreen() {
           value={`${stats.summary.streakWeeks} ${stats.summary.streakWeeks === 1 ? 'week' : 'weeks'}`}
         />
         <StatRow label="Trend" value={`${trend.symbol} ${trend.label}`} valueColor={trendColor} />
-        <StatRow
-          label="Body weight"
-          value={
-            stats.bodyWeightKg === null ? '—' : formatWeight(stats.bodyWeightKg, profile.unitPref)
-          }
-        />
         <StatRow label="Working sets" value={String(stats.totalWorkingSets)} />
         <StatRow
           label="Last trained"
@@ -125,6 +151,41 @@ export default function ProfileScreen() {
               : '—'
           }
         />
+      </Panel>
+
+      <Panel>
+        <PixelText variant="label" color={Palette.textSecondary}>
+          Body Weight
+        </PixelText>
+        <View style={styles.weightRow}>
+          <TextInput
+            value={weightInput}
+            onChangeText={(value) => {
+              setWeightInput(value);
+              if (weightError) setWeightError(null);
+            }}
+            onSubmitEditing={saveBodyWeight}
+            keyboardType="decimal-pad"
+            placeholder={`0 ${UNIT_LABEL[profile.unitPref]}`}
+            placeholderTextColor={Palette.textMuted}
+            style={[styles.input, styles.weightInput]}
+          />
+          <PixelButton label={stats.bodyWeightId ? 'Update' : 'Add'} onPress={saveBodyWeight} />
+        </View>
+        {weightError ? (
+          <PixelText variant="caption" color={Palette.danger}>
+            {weightError}
+          </PixelText>
+        ) : (
+          <PixelText variant="caption" color={Palette.textSecondary}>
+            {stats.bodyWeightKg === null
+              ? 'No weigh-in logged yet.'
+              : `Latest ${formatWeight(
+                  stats.bodyWeightKg,
+                  profile.unitPref,
+                )} · updates your latest weigh-in`}
+          </PixelText>
+        )}
       </Panel>
 
       <PixelText variant="caption" color={Palette.textMuted}>
@@ -208,6 +269,14 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.lg,
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
+  },
+  weightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  weightInput: {
+    flex: 1,
   },
   unitRow: {
     flexDirection: 'row',
