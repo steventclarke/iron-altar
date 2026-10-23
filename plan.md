@@ -5,6 +5,7 @@ rendered as an 8-bit pixel-art RPG. Gamified via a Tamagotchi-style avatar that 
 as you train. Must run on iOS, Android, and web.
 
 - **MVP target:** end of November 2026
+- **First public milestone:** hosted web URL linked from the portfolio (P7.1)
 - **Release intent:** personal use first, public release later (App Store / Play / web)
 
 ## 0. Resolved Decisions
@@ -45,7 +46,8 @@ as you train. Must run on iOS, Android, and web.
 
 ### Scope & delivery
 
-- **P0 includes** repo setup + lint/format. **No CI** in P0.
+- **P0 includes** repo setup + lint/format. **No CI** in P0; hosting and CI/CD land in
+  **P7.1** (section 7).
 
 ### Deferred (revisit later)
 
@@ -75,7 +77,13 @@ as you train. Must run on iOS, Android, and web.
 - **Styling:** design-token theme + StyleSheet (NativeWind optional, not required).
   Pixel look via custom font (Press Start 2P) and a strict palette.
 - **Testing:** Jest + React Native Testing Library. (Maestro e2e later.)
-- **Web deploy:** `expo export --platform web` to a static host (Vercel / Netlify / EAS Hosting).
+- **Web deploy:** `expo export --platform web` (`web.output: "single"` SPA) to a private
+  **AWS S3** origin behind **CloudFront**, with **Route 53 + ACM** for
+  `stevenclarke.dev`; provisioned with **Terraform** and deployed by **GitHub Actions**.
+  EAS Hosting / Vercel / Netlify remain simpler fallbacks (section 7).
+- **Mobile releases:** **EAS Build** production `.ipa` / `.aab`, archived with version
+  metadata and checksums in a private, versioned **S3** bucket for future App Store /
+  Play Store publishing workflows.
 
 ## 2. Architecture
 
@@ -172,13 +180,20 @@ Notes:
   screen (#16); reps edit field constrained to two digits and left-aligned (#17, #18); XP
   switched from tonnage to 1 per working set, with a DB v5 rebuild of stored session/profile
   totals (#19).
-- **P6.2 Session/Profile IA & Stats (planned):** make `/` a lean Session entry screen containing
-  only Start/Resume Workout; move the avatar and training summary exclusively to Profile (#20);
-  remove "Log Past Workout" and rely on the session date selector for backdating (#21); make
-  body weight editable on Profile (#22); only show "Decaying" after a full week without
-  training (#23).
-- **P7 Polish & Ship:** responsive web, accessibility, empty states, static web export + hosted
-  URL, native build config (EAS). Text-file import (#4, post-MVP candidate).
+- **P6.2 Session/Profile IA & Stats (done):** `/` is a lean Session entry screen containing
+  only Start/Resume Workout, with the avatar and training summary exclusively on Profile (#20);
+  "Log Past Workout" is removed in favor of the session date selector (#21); body weight is
+  editable on Profile (#22); "Decaying" only appears after a full week without training (#23).
+- **P7 Hosting & Ship (next):**
+  - **P7.1 AWS web hosting + CI/CD:** Terraform-managed private S3 origin, CloudFront,
+    Route 53, ACM, and SSM outputs; GitHub Actions OIDC deployment on push to `main`;
+    SPA fallback, cache/security headers, deployment metadata, and rollback path. See
+    section 7.
+  - **P7.2 Mobile release archive:** EAS production builds for iOS/Android; upload signed
+    `.ipa`/`.aab` plus version metadata and SHA-256 checksums to a private, versioned S3
+    bucket. Store submission remains a future workflow.
+  - **P7.3 Polish & launch:** responsive web, accessibility, empty states, privacy/support
+    pages, store listing metadata, and text-file import (#4, post-MVP candidate).
 
 ## 6. Feature Refinements (triaged)
 
@@ -186,31 +201,31 @@ Efficiency rule: fold **structural** items (data model, domain, persistence, arc
 in as early as possible; defer **experiential** items (polish, feel, copy) until the feature
 can actually be used. Each phase pulls in the refinements that intersect its surface area.
 
-| #   | Refinement                                                                                                                                                                              | Phase                                                           | Notes                                                                                                                                                                                                                                                                                                                                             |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Duplicate-set button: re-log a set with the same weight x reps without re-entering.                                                                                                     | **P3** (Session Log) — copy shipped, glyph to change            | Operates on the existing `SetEntry` shape — no schema/domain change. Shipped as per-set `2X` plus a "Repeat Last Set" button. Follow-up: replace the `2X` glyph with `+` — `2X` reads as a set-count/multiplier and is confusing.                                                                                                                 |
-| 2   | In-progress session survives leaving the screen, so the user can check prior sessions and return.                                                                                       | **P1** (persist) + **P3** (UX) — shipped                        | Structural. Phase A (P1): persist the draft session instead of the in-memory `useSessionStore`, so it survives navigation and app restart. Phase B (P3): Resume affordance on the Session page + return to the active session.                                                                                                                    |
-| 3   | Log retroactive workouts for prior dates.                                                                                                                                               | **P1.1** (data) + **P3** (UX) + **P6** (streak/decay) — shipped | Structural. P1.1 shipped the data model: `Session.date` is the performed calendar day, `startedAt`/`endedAt` are optional (live only), and the draft/store carry a settable entry date. P3 shipped the session date stepper (the Gym shortcut is removed by #21). P4 renders it in History; P6 computes weekly streak/decay from performed dates. |
-| 4   | Import workout data from a text file.                                                                                                                                                   | **P7** (post-MVP candidate)                                     | Needs a documented import format (CSV/JSON), a bulk-insert repository method with de-dupe, and platform file pickers (web input vs native document picker). Defer until the data model is stable; scope risk vs the Nov MVP. Doubles as a backfill path for #3.                                                                                   |
-| 5   | Rename "Dungeon Gym" to "Iron Altar" and center the screen title.                                                                                                                       | **Superseded by #20**                                           | The Gym page becomes the Session page (#20), so its tab/heading should read "Session" rather than "Iron Altar"; the app name can live in Profile or landing copy.                                                                                                                                                                                 |
-| 6   | XP should be based on the count of **working sets** (non-warmup), and we should track working sets **per exercise** so progress can be shown per lift, not just as one number.          | **P5** (Data) + **P6.1** (Gamification) — shipped               | Structural: `workingSetsByExercise(sets)` lives in `src/domain/progress.ts` and drives per-lift charts. P6 added lifetime working-set counts to Profile stats; P6.1 switched XP to 1 per working set.                                                                                                                                             |
-| 7   | Move the navigation bar to the top and lock it so it stays visible while scrolling.                                                                                                     | **P5.1** (Demo) — shipped                                       | Implemented as a persistent `NavBar` in `Screen`'s new fixed `header` slot on every screen, with the bottom tab bar hidden. The bar highlights the active section and uses `navigate` so tabs focus instead of stacking.                                                                                                                          |
-| 8   | User-definable rest timer in minutes **and** seconds via up/down steppers; default 1:00; persist the chosen value across sessions.                                                      | **P3.1** (Session Log follow-up)                                | Structural (persistence) + experiential (controls). Replace the fixed 60/90/120/180 presets with a minute/second stepper, default 1:00, and persist the chosen duration (extend the draft/document store, not just ephemeral `rest-timer-store`). Main use case is long strength rests (~5:00).                                                   |
-| 9   | Navigation bar on the Session Log page so the user can return to the gym or session history to reference past sessions.                                                                 | **P3.1** (Session Log follow-up)                                | Experiential: expose tab navigation (or in-screen links) on `session/[id]`, which currently sits outside the tab navigator. Depends on #7's navigator decision so the two agree on top vs bottom placement.                                                                                                                                       |
-| 10  | Use the user-selected unit of measure for the tonnage total on the Session Log page.                                                                                                    | **P3.1** (Session Log follow-up)                                | Small: `totalVolumeKg` is already computed; format it with `formatWeight(..., unitPref)` (or the stone/kg/lb display helpers) instead of raw kg. Bug-level polish on the session screen.                                                                                                                                                          |
-| 11  | Group logged sets by exercise on the Session Log page.                                                                                                                                  | **P3.1** (Session Log follow-up)                                | Experiential layout: render the flat `active.sets` list grouped by `exerciseId` (ordered by main lift then accessories), instead of one continuous list. Pairs with #12/#13.                                                                                                                                                                      |
-| 12  | Allow editing the reps of a logged set (e.g. duplicate a set, then edit reps down after a missed rep).                                                                                  | **P3.1** (Session Log follow-up)                                | Structural: add an `updateSet(setId, patch)` action to `session-store` (+ a draft commit) and an editable reps control in the set row. Extends the duplicate-set (#1) workflow.                                                                                                                                                                   |
-| 13  | Within an exercise, group logged sets of identical weight onto one row (e.g. `225 x 5, 5, 4`).                                                                                          | **P3.1** (Session Log follow-up)                                | Experiential layout over the grouped view (#11): collapse same-`weightKg` sets into a single row showing a comma-separated reps list. Pure presentation; no schema change (reps remain individual `SetEntry` rows).                                                                                                                               |
-| 14  | Use `+` instead of `2X` for the duplicate-set control.                                                                                                                                  | **P3.1** (Session Log follow-up)                                | Copy/label fix on #1: `2X` is confusing because it reads as a set count/multiplier rather than "add a set". Swap the per-set glyph to `+`. No behavior change.                                                                                                                                                                                    |
-| 15  | Rest-timer minute/second steppers show literal `\u25B2` / `\u25BC` text instead of up/down arrows.                                                                                      | **P5.1** (Demo) — shipped                                       | Bug: JSX string attributes don't process escape sequences, so the arrows rendered as literal backslash text. Use the actual `▲` / `▼` characters.                                                                                                                                                                                                 |
-| 16  | Move the rest timer to its own screen to declutter the session log.                                                                                                                     | **P6.1** — shipped                                              | New `/rest-timer` route reuses the persisted timer store; the session log keeps a single launch button.                                                                                                                                                                                                                                           |
-| 17  | Make the reps edit box only two digits wide so it no longer overflows when 3+ sets are logged.                                                                                          | **P6.1** — shipped                                              | Fixed-width input plus a flexible, wrapping reps row keeps long set groups inside the panel.                                                                                                                                                                                                                                                      |
-| 18  | Left-align the reps edit box instead of centering its text.                                                                                                                             | **P6.1** — shipped                                              | `textAlign: 'left'` on the reps input.                                                                                                                                                                                                                                                                                                            |
-| 19  | XP should be 1 per working set per exercise, not based on tonnage.                                                                                                                      | **P6.1** — shipped                                              | `xpFromSet` now returns 1 for non-warmups; DB v5 rewrites stored session XP and rebuilds profile XP from working-set totals.                                                                                                                                                                                                                      |
-| 20  | The Gym and Profile pages duplicate the avatar and training summary. Make the Gym page a lean Session page with only Start/Resume Workout; keep the avatar and summary on Profile only. | **P6.2** (Session/Profile IA & Stats) — planned                 | Experiential IA cleanup. `/` keeps Start Workout (or Resume when a draft exists) and drops the avatar, XP/streak/trend, and last-trained panels. Profile already owns that content. Rename the GYM tab/heading to SESSION; this supersedes #5.                                                                                                    |
-| 21  | Remove the "Log Past Workout" button; retroactive logging can start from Start Workout and use the session date selector.                                                               | **P6.2** (Session/Profile IA & Stats) — planned                 | Start Workout opens the session log, where `EntryDateStepper` already sets a past performed date (P3/#3). Removes a redundant entry point and simplifies the Session page.                                                                                                                                                                        |
-| 22  | Make body weight editable on the Profile page.                                                                                                                                          | **P6.2** (Profile stats) — planned                              | Add a weigh-in editor to Profile's training panel (preferred units, defaults to today) and refresh the latest value immediately. Reuse `bodyWeightRepository.add`; Progress keeps the chart/history. Add an `update(id, weightKg)` repository method if the latest entry must be editable in place rather than appended.                          |
-| 23  | The trend should only say "Decaying" once a week or more has passed since the last logged workout.                                                                                      | **P6.2** (Gamification) — planned                               | `trainingSummary` currently compares recent XP with weekly decay, so 1 XP/set reports DECAYING even after training yesterday. Gate `down` on `weeksSince(lastTrainingDate) >= 1`; otherwise show `up` when the latest week has training XP and `flat` with no sessions.                                                                           |
+| #   | Refinement                                                                                                                                                                              | Phase                                                           | Notes                                                                                                                                                                                                                                                                                                                                              |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Duplicate-set button: re-log a set with the same weight x reps without re-entering.                                                                                                     | **P3** (Session Log) — copy shipped, glyph to change            | Operates on the existing `SetEntry` shape — no schema/domain change. Shipped as per-set `2X` plus a "Repeat Last Set" button. Follow-up: replace the `2X` glyph with `+` — `2X` reads as a set-count/multiplier and is confusing.                                                                                                                  |
+| 2   | In-progress session survives leaving the screen, so the user can check prior sessions and return.                                                                                       | **P1** (persist) + **P3** (UX) — shipped                        | Structural. Phase A (P1): persist the draft session instead of the in-memory `useSessionStore`, so it survives navigation and app restart. Phase B (P3): Resume affordance on the Session page + return to the active session.                                                                                                                     |
+| 3   | Log retroactive workouts for prior dates.                                                                                                                                               | **P1.1** (data) + **P3** (UX) + **P6** (streak/decay) — shipped | Structural. P1.1 shipped the data model: `Session.date` is the performed calendar day, `startedAt`/`endedAt` are optional (live only), and the draft/store carry a settable entry date. P3 shipped the session date stepper (the Gym shortcut was removed by #21). P4 renders it in History; P6 computes weekly streak/decay from performed dates. |
+| 4   | Import workout data from a text file.                                                                                                                                                   | **P7** (post-MVP candidate)                                     | Needs a documented import format (CSV/JSON), a bulk-insert repository method with de-dupe, and platform file pickers (web input vs native document picker). Defer until the data model is stable; scope risk vs the Nov MVP. Doubles as a backfill path for #3.                                                                                    |
+| 5   | Rename "Dungeon Gym" to "Iron Altar" and center the screen title.                                                                                                                       | **Superseded by #20**                                           | The Gym page becomes the Session page (#20), so its tab/heading should read "Session" rather than "Iron Altar"; the app name can live in Profile or landing copy.                                                                                                                                                                                  |
+| 6   | XP should be based on the count of **working sets** (non-warmup), and we should track working sets **per exercise** so progress can be shown per lift, not just as one number.          | **P5** (Data) + **P6.1** (Gamification) — shipped               | Structural: `workingSetsByExercise(sets)` lives in `src/domain/progress.ts` and drives per-lift charts. P6 added lifetime working-set counts to Profile stats; P6.1 switched XP to 1 per working set.                                                                                                                                              |
+| 7   | Move the navigation bar to the top and lock it so it stays visible while scrolling.                                                                                                     | **P5.1** (Demo) — shipped                                       | Implemented as a persistent `NavBar` in `Screen`'s new fixed `header` slot on every screen, with the bottom tab bar hidden. The bar highlights the active section and uses `navigate` so tabs focus instead of stacking.                                                                                                                           |
+| 8   | User-definable rest timer in minutes **and** seconds via up/down steppers; default 1:00; persist the chosen value across sessions.                                                      | **P3.1** (Session Log follow-up)                                | Structural (persistence) + experiential (controls). Replace the fixed 60/90/120/180 presets with a minute/second stepper, default 1:00, and persist the chosen duration (extend the draft/document store, not just ephemeral `rest-timer-store`). Main use case is long strength rests (~5:00).                                                    |
+| 9   | Navigation bar on the Session Log page so the user can return to the gym or session history to reference past sessions.                                                                 | **P3.1** (Session Log follow-up)                                | Experiential: expose tab navigation (or in-screen links) on `session/[id]`, which currently sits outside the tab navigator. Depends on #7's navigator decision so the two agree on top vs bottom placement.                                                                                                                                        |
+| 10  | Use the user-selected unit of measure for the tonnage total on the Session Log page.                                                                                                    | **P3.1** (Session Log follow-up)                                | Small: `totalVolumeKg` is already computed; format it with `formatWeight(..., unitPref)` (or the stone/kg/lb display helpers) instead of raw kg. Bug-level polish on the session screen.                                                                                                                                                           |
+| 11  | Group logged sets by exercise on the Session Log page.                                                                                                                                  | **P3.1** (Session Log follow-up)                                | Experiential layout: render the flat `active.sets` list grouped by `exerciseId` (ordered by main lift then accessories), instead of one continuous list. Pairs with #12/#13.                                                                                                                                                                       |
+| 12  | Allow editing the reps of a logged set (e.g. duplicate a set, then edit reps down after a missed rep).                                                                                  | **P3.1** (Session Log follow-up)                                | Structural: add an `updateSet(setId, patch)` action to `session-store` (+ a draft commit) and an editable reps control in the set row. Extends the duplicate-set (#1) workflow.                                                                                                                                                                    |
+| 13  | Within an exercise, group logged sets of identical weight onto one row (e.g. `225 x 5, 5, 4`).                                                                                          | **P3.1** (Session Log follow-up)                                | Experiential layout over the grouped view (#11): collapse same-`weightKg` sets into a single row showing a comma-separated reps list. Pure presentation; no schema change (reps remain individual `SetEntry` rows).                                                                                                                                |
+| 14  | Use `+` instead of `2X` for the duplicate-set control.                                                                                                                                  | **P3.1** (Session Log follow-up)                                | Copy/label fix on #1: `2X` is confusing because it reads as a set count/multiplier rather than "add a set". Swap the per-set glyph to `+`. No behavior change.                                                                                                                                                                                     |
+| 15  | Rest-timer minute/second steppers show literal `\u25B2` / `\u25BC` text instead of up/down arrows.                                                                                      | **P5.1** (Demo) — shipped                                       | Bug: JSX string attributes don't process escape sequences, so the arrows rendered as literal backslash text. Use the actual `▲` / `▼` characters.                                                                                                                                                                                                  |
+| 16  | Move the rest timer to its own screen to declutter the session log.                                                                                                                     | **P6.1** — shipped                                              | New `/rest-timer` route reuses the persisted timer store; the session log keeps a single launch button.                                                                                                                                                                                                                                            |
+| 17  | Make the reps edit box only two digits wide so it no longer overflows when 3+ sets are logged.                                                                                          | **P6.1** — shipped                                              | Fixed-width input plus a flexible, wrapping reps row keeps long set groups inside the panel.                                                                                                                                                                                                                                                       |
+| 18  | Left-align the reps edit box instead of centering its text.                                                                                                                             | **P6.1** — shipped                                              | `textAlign: 'left'` on the reps input.                                                                                                                                                                                                                                                                                                             |
+| 19  | XP should be 1 per working set per exercise, not based on tonnage.                                                                                                                      | **P6.1** — shipped                                              | `xpFromSet` now returns 1 for non-warmups; DB v5 rewrites stored session XP and rebuilds profile XP from working-set totals.                                                                                                                                                                                                                       |
+| 20  | The Gym and Profile pages duplicate the avatar and training summary. Make the Gym page a lean Session page with only Start/Resume Workout; keep the avatar and summary on Profile only. | **P6.2** (Session/Profile IA & Stats) — shipped                 | Experiential IA cleanup. `/` keeps Start Workout (or Resume when a draft exists) and drops the avatar, XP/streak/trend, and last-trained panels. Profile owns that content. The GYM tab/heading now reads SESSION; this supersedes #5.                                                                                                             |
+| 21  | Remove the "Log Past Workout" button; retroactive logging can start from Start Workout and use the session date selector.                                                               | **P6.2** (Session/Profile IA & Stats) — shipped                 | Start Workout opens the session log, where `EntryDateStepper` already sets a past performed date (P3/#3). The redundant entry point is gone.                                                                                                                                                                                                       |
+| 22  | Make body weight editable on the Profile page.                                                                                                                                          | **P6.2** (Profile stats) — shipped                              | Add a weigh-in editor to Profile's training panel in preferred units. The latest entry is updated in place via `bodyWeightRepository.update`; with no history, the first entry is added. Progress keeps the chart/history and dated entries.                                                                                                       |
+| 23  | The trend should only say "Decaying" once a week or more has passed since the last logged workout.                                                                                      | **P6.2** (Gamification) — shipped                               | `trainingSummary` no longer compares recent XP with weekly decay. `down` is gated on `weeksSince(lastTrainingDate) >= 1`; otherwise `up` when the latest week has training XP and `flat` with no sessions.                                                                                                                                         |
 
 ### Triaged into phases
 
@@ -233,9 +248,186 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
   working-set-count / per-exercise XP seam wired into stats (#6).
 - **P6.1 Session Log & XP Refinements (done):** rest timer moved to its own screen (#16);
   two-digit left-aligned reps field (#17, #18); XP = 1 per working set with DB v5 rebuild (#19).
-- **P6.2 Session/Profile IA & Stats (planned):** lean Session page with Start/Resume only
-  (#20); remove "Log Past Workout" in favor of the date selector (#21); Profile body-weight
+- **P6.2 Session/Profile IA & Stats (done):** lean Session page with Start/Resume only
+  (#20); "Log Past Workout" removed in favor of the date selector (#21); Profile body-weight
   editing (#22); week-gated decaying trend (#23).
-- **P7 Polish & Ship:** responsive web; accessibility; empty states; static web export +
-  hosted URL; native build config (EAS); text-file import (#4) — post-MVP candidate; confirm
-  format before building.
+- **P7 Hosting & Ship:** P7.1 AWS web hosting + GitHub Actions; P7.2 EAS mobile artifacts
+  archived to versioned S3; P7.3 responsive web, accessibility, empty states,
+  privacy/support pages, store listing metadata, and text-file import (#4) — post-MVP
+  candidate; confirm format before building.
+
+## 7. Hosting & Release Infrastructure (P7.1/P7.2)
+
+### Recommendation
+
+- **Web:** private **S3** origin served through **CloudFront** (Origin Access Control),
+  with **Route 53** DNS and an **ACM** certificate. This keeps the app on AWS, is cheap at
+  portfolio traffic levels, and gives full control over caching, headers, and rollback.
+- **Infrastructure as code:** **Terraform**, with remote state in S3 (versioned, encrypted,
+  public access blocked) and S3-native state locking (Terraform 1.10+) or DynamoDB locking.
+- **CI/CD:** **GitHub Actions** with **GitHub OIDC -> AWS IAM roles**. No long-lived AWS
+  access keys in GitHub. Every push to `main` runs checks and deploys the web build.
+- **Mobile builds:** **EAS Build** production profile (`store` distribution), producing a
+  signed `.ipa` and `.aab`. A manual/tag-triggered workflow archives them with version
+  metadata and checksums in a private, versioned S3 release bucket.
+- **Publishing:** out of scope for P7.2. A future workflow can read a release from S3 and
+  call `eas submit` (or the store CLIs). Apple/Google submission credentials stay in
+  GitHub/EAS secrets, never in the artifact bucket.
+- **Domain:** **`iron-altar.stevenclarke.dev`** (confirmed), using the existing Route 53
+  hosted zone; keep the portfolio at the apex or another hostname. Use `us-east-1` for ACM
+  (required by CloudFront) and the AWS resources.
+
+### Alternatives considered
+
+| Area             | Recommended                 | Alternative                                  | Trade-off                                                                                                                              |
+| ---------------- | --------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Web hosting      | S3 + CloudFront + Terraform | **EAS Hosting**                              | Fastest path, managed TLS/CDN, but custom domains require a paid EAS plan and it does not exercise the AWS/IaC setup.                  |
+| Web hosting      | S3 + CloudFront + Terraform | **AWS Amplify Hosting**                      | Git-connected and simpler, but less explicit IaC and less control than S3/CloudFront for a static SPA.                                 |
+| Web hosting      | S3 + CloudFront + Terraform | **Vercel / Netlify**                         | Excellent static DX and previews, but not AWS-based and unnecessary for this portfolio setup.                                          |
+| IaC              | Terraform                   | **AWS CDK**                                  | CDK is TypeScript-native and AWS-focused, but Terraform is more portable and easier to keep provider-neutral.                          |
+| CI/CD            | GitHub Actions + OIDC       | **EAS Workflows**                            | Great for mobile build/submit jobs, but AWS web deployment and S3 archiving still need custom jobs; GitHub Actions keeps one pipeline. |
+| CI/CD            | GitHub Actions + OIDC       | **AWS CodePipeline / CodeBuild**             | More AWS-native, but heavier to configure and less convenient alongside the GitHub repo.                                               |
+| Mobile builds    | EAS Build                   | GitHub macOS runners / local Xcode + Gradle  | Full control, but credential management, macOS cost, and maintenance are much higher.                                                  |
+| Artifact archive | Private versioned S3 bucket | EAS-hosted builds / GitHub Actions artifacts | Convenient, but not a durable, version-addressable release archive you control (Actions artifacts expire by default).                  |
+
+**Bottom line:** the proposed Terraform + GitHub Actions + S3/CloudFront setup is the right
+fit for an AWS-hosted portfolio project. If speed to a public URL matters more than AWS/IaC,
+EAS Hosting is the simplest fallback.
+
+### Target AWS/Terraform layout
+
+```
+infra/
+  bootstrap/        # applied once by an AWS admin; not run on every deploy
+    # Terraform state bucket + lock, GitHub OIDC provider, deploy IAM roles, budget alerts
+  web/
+    # ACM cert (us-east-1), Route 53 record, private site bucket, CloudFront + OAC,
+    # response-headers policy, SPA fallback, SSM outputs
+  releases/
+    # private/versioned/encrypted S3 artifact bucket, lifecycle, SSM outputs
+```
+
+- **Site bucket:** block all public access, versioning on, SSE enabled, no static website
+  endpoint. CloudFront uses OAC.
+- **CloudFront:** default root `index.html`; custom 403/404 responses return `/index.html`
+  with HTTP 200 for SPA deep links; HTTPS redirect; compression; security headers
+  (HSTS, `X-Content-Type-Options`, `Referrer-Policy`; add CSP after testing if desired).
+- **Caching:** hashed `/_expo/static/*` assets get long-lived immutable caching;
+  `index.html` and `deployment.json` are `no-cache`; other files use a short cache.
+- **Rollback:** redeploy a previous commit (site bucket versioning provides a secondary
+  safety net). A manual workflow dispatch can accept a commit SHA for emergency rollback.
+- **SSM outputs:** bucket names, CloudFront distribution ID, and hosted URL are published
+  to Parameter Store so the GitHub Actions deploy job does not need Terraform state access.
+- **AWS baseline:** root MFA, IAM Identity Center (no root use), CloudTrail, and an AWS
+  Budget with alerts (e.g. $10/month) before exposing the app.
+
+### Deployment workflows
+
+1. **Pull request CI** (`ci.yml`): Node 24 via `actions/setup-node` with npm cache,
+   `npm ci`, formatting check, `tsc --noEmit`, Expo lint, and `expo export -p web`
+   (upload the export only as a temporary CI artifact if useful). For `infra/**` changes,
+   also run `terraform fmt -check`, `terraform validate`, and `terraform plan` in a
+   read-only plan role.
+2. **Main deploy** (`deploy.yml`, on push to `main`): checks -> assume the infra role for
+   the web/releases stacks (Terraform apply, or skip when no infra changes) -> assume the
+   web-deploy role -> `expo export -p web` -> sync files in three passes: hashed
+   `/_expo/static/*` with `immutable`, other assets with a short cache, and
+   `index.html`/`deployment.json` with `no-cache`; delete removed assets -> invalidate
+   CloudFront `/*`. Use a concurrency group so two deploys never overlap. The first deploy
+   is run manually after bootstrap; subsequent pushes are automatic.
+3. **Mobile archive** (`build-mobile.yml`, `workflow_dispatch` and/or `v*` tags): run
+   `npx eas-cli@latest build --platform all --profile production --non-interactive --wait --json`,
+   parse each build's `artifacts.applicationArchiveUrl` (fall back to
+   `eas build:view <id> --json`), download the `.ipa`/`.aab`, compute SHA-256, upload the
+   artifact and `metadata.json` to S3, then write the release manifest. (`eas build:download`
+   is for simulator/emulator builds, not store artifacts.) Do **not** auto-submit to stores
+   in this phase.
+4. **Future publish workflow** (`publish-mobile.yml`): select a release by version/build
+   from S3, download it, and run `eas submit --path ...` or the store CLIs. Requires
+   App Store Connect API and Google Play service-account credentials stored as protected
+   GitHub environment secrets or in EAS.
+
+Use GitHub `production` / `mobile-release` environments, branch protection requiring CI,
+and OIDC trust policies restricted to this repository and `refs/heads/main` (or the mobile
+release tag). Separate roles keep web deploys, infra changes, and artifact writes scoped.
+
+### Version and artifact contract
+
+- **User-facing version:** manually bump `expo.version` in `app.json` per release
+  (`1.0.0`, `1.1.0`, ...). Git tag `v<version>` for a release.
+- **Build versions:** set `cli.appVersionSource: "remote"` and
+  `build.production.autoIncrement: true` in `eas.json`; EAS owns iOS `buildNumber` and
+  Android `versionCode` and prevents duplicate store uploads.
+- **Artifact layout** (immutable):
+  ```
+  mobile/<platform>/<version>/<buildNumber>/<artifact>
+  mobile/<platform>/<version>/<buildNumber>/metadata.json
+  mobile/manifest.json                  # generated after a successful both-platform run
+  ```
+  `metadata.json` records `version`, build number, EAS build ID, git SHA/ref, profile,
+  creation time, original filename, SHA-256, and size. The `.ipa`/`.aab` are signed store
+  artifacts; the bucket is private and encrypted.
+- **Retention:** keep production artifacts indefinitely unless storage becomes a problem;
+  use lifecycle rules for incomplete multipart uploads, not for release binaries.
+- **Secrets:** never upload signing keys, `.p8`/`.p12` files, API keys, or service-account
+  JSON to S3. EAS manages signing credentials (or they live in protected secrets).
+
+### Confirmed decisions
+
+1. **Hostname:** `iron-altar.stevenclarke.dev`.
+2. **DNS:** `stevenclarke.dev` is already a Route 53 hosted zone; Terraform manages the
+   subdomain alias and ACM validation records.
+3. **Bundle/package IDs:** `dev.stevenclarke.ironaltar` for both iOS and Android.
+4. **Mobile build trigger:** `v*` tag push or manual workflow dispatch.
+5. **Region:** `us-east-1` for ACM/CloudFront and both S3 buckets.
+6. **Web deploy trigger:** every push to `main`, after checks pass.
+
+### Open decisions
+
+1. **Retention:** keep all production mobile artifacts indefinitely (recommended), or
+   expire after a set period?
+2. **Store accounts:** confirm whether an Apple Developer Program membership and Google
+   Play Console account already exist; create them before P7.2 store-artifact work.
+3. **EAS plan/cost:** confirm the Expo/EAS account and whether the free tier is acceptable
+   for build minutes; paid plans add concurrency and priority.
+4. **Artifact backfill:** whether to rebuild/archive existing builds after setup, or start
+   with the first production release.
+
+### Actions Steven must take
+
+- [ ] AWS: enable root MFA, create an admin via IAM Identity Center, enable CloudTrail,
+      create a budget alert, and confirm the target account ID (`us-east-1`).
+- [ ] DNS/domain: provide the Route 53 hosted zone ID for `stevenclarke.dev` and grant
+      Terraform permission to manage the `iron-altar` record and ACM validation records.
+- [ ] GitHub: protect `main`, require CI, create `production` and `mobile-release`
+      environments, and provide the repository for OIDC trust.
+- [ ] Expo/EAS: create/sign in to the Expo account, run `eas init` (or provide the project
+      ID), choose an EAS organization, and create an `EXPO_TOKEN` for GitHub Actions.
+- [ ] Apple: enroll in the Apple Developer Program, accept agreements, create the App Store
+      Connect app record, and create an App Store Connect API key for future submissions.
+- [ ] Google: create the Play Console app record, complete developer verification, and
+      create a service account with Play Developer API access for future submissions.
+- [ ] Store assets (can follow after the first web deploy): privacy policy URL, support URL,
+      screenshots, descriptions, data-safety/app-privacy answers, content rating, and
+      encryption/export-compliance declaration.
+- [ ] Confirm EAS-managed signing is acceptable; otherwise provide existing Android
+      keystore and iOS distribution credentials.
+- [ ] After the first web deploy, link the hosted URL from the portfolio; optionally add
+      `deployment.json`/commit SHA to the portfolio’s project notes.
+
+### Implementation sequence
+
+1. **Bootstrap:** apply `infra/bootstrap` manually with an AWS admin; create state storage,
+   OIDC provider, roles, and budget. Verify GitHub can assume the roles.
+2. **Web infrastructure:** apply `infra/web` and `infra/releases`; validate certificate,
+   DNS, SPA deep links, headers, and cache behavior. Run the first export/sync manually.
+3. **Automate:** add PR CI and the main deploy workflow; verify a push to `main` updates
+   S3/CloudFront and a failed check blocks deploy.
+4. **Mobile:** add `eas.json`, identifiers, remote version source, production profile, and
+   signing; run the mobile archive workflow and verify artifact + metadata layout.
+5. **Launch:** add P7.3 polish, privacy/support pages, and store metadata. Build the future
+   `publish-mobile.yml` only when ready to submit.
+
+**Out of scope for P7.1/P7.2:** PR preview URLs, multi-region, WAF, OTA updates, account
+sync, store auto-submission, and a custom backend. These can be added later without
+changing the web or artifact layout.
