@@ -34,6 +34,11 @@ export type Profile = {
   unitPref: UnitPreference;
   createdAt: IsoDate;
   xp: number;
+  /**
+   * Most recent day the user trained (or profile creation). XP decays one step
+   * for every full week that passes without training.
+   */
+  lastActivityDate: CalendarDate;
 };
 
 export type Exercise = {

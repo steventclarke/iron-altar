@@ -1,5 +1,4 @@
 import { getDatabase, mutate } from '@/data/db/database';
-import { clampXp } from '@/domain/xp';
 import type { Profile } from '@/domain/types';
 
 export const profileRepository = {
@@ -18,14 +17,6 @@ export const profileRepository = {
     return mutate((db) => {
       if (!db.profile) return null;
       db.profile = { ...db.profile, ...patch };
-      return db.profile;
-    });
-  },
-
-  addXp(amount: number): Profile | null {
-    return mutate((db) => {
-      if (!db.profile) return null;
-      db.profile = { ...db.profile, xp: clampXp(db.profile.xp + amount) };
       return db.profile;
     });
   },

@@ -1,4 +1,5 @@
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/ui/avatar';
@@ -8,8 +9,10 @@ import { Panel } from '@/ui/panel';
 import { Screen } from '@/ui/screen';
 import { PixelText } from '@/ui/text';
 import { Palette, Spacing } from '@/constants/theme';
+import { sessionRepository } from '@/data/repositories/session-repository';
 import { addCalendarDays, formatCalendarDate, todayCalendarDate } from '@/domain/date';
-import { stageInfoForXp } from '@/domain/xp';
+import { trainingSummary, trendDisplay } from '@/domain/gamification';
+import { stageInfoForXp, X_PER_WEEK_DECAY } from '@/domain/xp';
 import { useProfileStore } from '@/state/profile-store';
 import { useSessionStore } from '@/state/session-store';
 
@@ -17,6 +20,13 @@ export default function DungeonGymScreen() {
   const profile = useProfileStore((s) => s.profile);
   const active = useSessionStore((s) => s.active);
   const startSession = useSessionStore((s) => s.start);
+  const [summary, setSummary] = useState(() => trainingSummary(sessionRepository.all()));
+
+  useFocusEffect(
+    useCallback(() => {
+      setSummary(trainingSummary(sessionRepository.all()));
+    }, []),
+  );
 
   if (!profile) {
     return (
@@ -33,6 +43,7 @@ export default function DungeonGymScreen() {
   }
 
   const stage = stageInfoForXp(profile.xp);
+  const trend = trendDisplay(summary.trend);
 
   const openActiveSession = () => {
     const current = useSessionStore.getState().active;
@@ -65,9 +76,30 @@ export default function DungeonGymScreen() {
 
       <Panel>
         <StatRow label="XP" value={`${profile.xp} / 1000`} />
-        <StatRow label="Streak" value="0 weeks" />
-        <StatRow label="Trend" value="—" />
+        <StatRow
+          label="Streak"
+          value={`${summary.streakWeeks} ${summary.streakWeeks === 1 ? 'week' : 'weeks'}`}
+        />
+        <StatRow
+          label="Trend"
+          value={`${trend.symbol} ${trend.label}`}
+          valueColor={
+            summary.trend === 'up'
+              ? Palette.xpUp
+              : summary.trend === 'down'
+                ? Palette.xpDown
+                : Palette.textSecondary
+          }
+        />
+        <StatRow label="Last 7 days" value={`+${summary.recentXpGain.toFixed(0)} XP`} />
+        <StatRow
+          label="Last trained"
+          value={summary.lastTrainingDate ? formatCalendarDate(summary.lastTrainingDate) : '—'}
+        />
       </Panel>
+      <PixelText variant="caption" color={Palette.textMuted}>
+        Skip a full week of training and Milo loses {X_PER_WEEK_DECAY} XP.
+      </PixelText>
 
       {active ? (
         <Panel highlight>
@@ -90,13 +122,23 @@ export default function DungeonGymScreen() {
   );
 }
 
-function StatRow({ label, value }: { label: string; value: string }) {
+function StatRow({
+  label,
+  value,
+  valueColor = Palette.text,
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
   return (
     <View style={styles.statRow}>
       <PixelText variant="label" color={Palette.textSecondary}>
         {label}
       </PixelText>
-      <PixelText variant="body">{value}</PixelText>
+      <PixelText variant="body" color={valueColor}>
+        {value}
+      </PixelText>
     </View>
   );
 }

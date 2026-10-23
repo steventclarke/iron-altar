@@ -17,7 +17,9 @@ const NAV_LINKS: NavLink[] = [
 ];
 
 function isActive(pathname: string, href: string): boolean {
-  if (href === '/') return pathname === '/' || pathname.startsWith('/session/');
+  if (href === '/') {
+    return pathname === '/' || pathname.startsWith('/session/') || pathname === '/rest-timer';
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
