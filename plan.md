@@ -139,64 +139,143 @@ Notes:
 
 ## 5. Phases / Milestones
 
-- **P0 Scaffold:** Expo + TS init, Expo Router, lint/format, tsconfig paths, theme tokens,
-  pixel font, base UI primitives, skeleton routes. Runs on iOS/Android/web.
-- **P1 Data (done):** versioned JSON document + migrations, repositories (profile,
-  exercise, session, body weight, draft), seed exercises (5 main lifts + accessories),
-  SyncAdapter seam, Zod-free typed stores on repositories, unit conversion, and persisted
-  active/draft session (refinement #2 prerequisite). Tests deferred to a later phase.
-- **P1.1 Session Entry Date (done):** `Session.date` becomes the user-chosen performed
-  calendar day (`YYYY-MM-DD`) with `startedAt`/`endedAt` now optional (live sessions only);
-  `DraftSession` carries the entry date; `DB_VERSION` → 2 with a migration normalizing legacy
-  dates; repository sorts by performed date; store gains `start(date?)` + `setEntryDate`
-  (refinement #3 data model — prerequisite for retroactive workouts in P3).
-- **P2 Profile + Avatar (done):** character registry, avatar component, sprite-sheet loader,
-  stage calc, profile screen.
-- **P3 Session Log (done):** exercise picker (main lifts + accessories), set entry
-  (weight/reps/warmup/notes), rest timer (presets 60/90/120/180s, auto-start on set,
-  survives navigation), validation, Resume affordance on the Session page (#2), and
-  retroactive date control on the session screen over the P1.1 entry-date model (#3).
-  Duplicate-set button: per-set `2X` + "Repeat Last Set" (#1).
-- **P3.1 Session Log Refinements (done):** follow-up pass on the session screen from PO
-  review — configurable minute/second rest timer with persistence (#8), navigation back to
-  gym/history (#9), unit-aware tonnage (#10), sets grouped by exercise (#11), editable
-  logged reps (#12), and same-weight sets collapsed to one row (#13). Structural items
-  (rest-timer persistence, `updateSet`) land before the layout items that build on them.
-- **P4 History (done):** list + detail view. Render retroactively-dated sessions (#3).
-- **P5 Data Viz (done):** custom SVG pixel chart components, per-lift and body-weight
-  screens, manual body-weight entry, and the per-exercise working-set aggregation seam
-  (#6).
-- **P5.1 Demo Visual Consistency (done):** locked top navigation on every screen — bottom
-  tab bar hidden, `Screen` gains a fixed `header` slot, and `NavBar` highlights the active
-  tab (#7, pulled forward from P7 for the demo); rest-timer stepper arrow glyphs fixed
-  (#15).
-- **P6 Gamification & Animations (done):** weekly streak + XP decay from the manual performed
-  date (`Profile.lastActivityDate`, `DB_VERSION` → 4), trend indicator, XP-to-next-stage bar,
-  set-complete flash, and a workout-complete overlay with avatar growth. Animations use React
-  Native `Animated` (native driver off on web) so no extra dependency is needed. Streak/decay
-  now follow backdated workouts (#3); working-set counts feed the Profile stats and per-exercise
-  seam (#6).
-- **P6.1 Session Log & XP Refinements (done):** rest timer moved to its own `/rest-timer`
-  screen (#16); reps edit field constrained to two digits and left-aligned (#17, #18); XP
-  switched from tonnage to 1 per working set, with a DB v5 rebuild of stored session/profile
-  totals (#19).
-- **P6.2 Session/Profile IA & Stats (done):** `/` is a lean Session entry screen containing
-  only Start/Resume Workout, with the avatar and training summary exclusively on Profile (#20);
-  "Log Past Workout" is removed in favor of the session date selector (#21); body weight is
-  editable on Profile (#22); "Decaying" only appears after a full week without training (#23).
-- **P7 Hosting & Ship (in progress):**
-  - **P7.1 App hosting on the platform (in progress):** platform repo owns DNS,
-    certificates, OIDC roles, and the SSM contract; this repo adds an `infra/`
-    **AWS CDK v2 (TypeScript)** app for `preview` and `prod` S3/CloudFront stacks plus its
-    own Route 53 alias records. Preview deploys automatically from `preview`; production
-    deploys from `main` after approval. SPA fallback, cache/security headers, deployment
-    metadata, and rollback path. See section 7. PR CI checks (`.github/workflows/ci.yml`)
-    are in place; the CDK stacks and deploy workflows are pending.
-  - **P7.2 Mobile release archive:** EAS production builds for iOS/Android; upload signed
-    `.ipa`/`.aab` plus version metadata and SHA-256 checksums to a private, versioned S3
-    bucket owned by this app’s CDK stack. Store submission remains a future workflow.
-  - **P7.3 Polish & launch:** responsive web, accessibility, empty states, privacy/support
-    pages, store listing metadata, and text-file import (#4, post-MVP candidate).
+### Phase 0: Scaffold — Completed
+
+- [x] Expo + TypeScript init with Expo Router.
+- [x] Lint and format tooling.
+- [x] tsconfig path aliases.
+- [x] Theme tokens and pixel font.
+- [x] Base UI primitives.
+- [x] Skeleton routes.
+- [x] Runs on iOS, Android, and web.
+
+### Phase 1: Data — Completed
+
+- [x] Versioned JSON document + migrations.
+- [x] Repositories for profile, exercise, session, body weight, and draft.
+- [x] Seed exercises (5 main lifts + accessories).
+- [x] SyncAdapter seam.
+- [x] Typed stores on repositories.
+- [x] Unit conversion.
+- [x] Persisted active/draft session (refinement #2 prerequisite).
+- [ ] Tests (deferred to a later phase).
+
+### Phase 1.1: Session Entry Date — Completed
+
+- [x] `Session.date` becomes the user-chosen performed calendar day (`YYYY-MM-DD`); `startedAt`/`endedAt` are optional (live sessions only).
+- [x] `DraftSession` carries the entry date.
+- [x] `DB_VERSION` → 2 with a migration normalizing legacy dates.
+- [x] Repository sorts by performed date.
+- [x] Store gains `start(date?)` + `setEntryDate` (refinement #3 data model — prerequisite for retroactive workouts in P3).
+
+### Phase 2: Profile + Avatar — Completed
+
+- [x] Character registry.
+- [x] Avatar component.
+- [x] Sprite-sheet loader.
+- [x] Stage calculation.
+- [x] Profile screen.
+
+### Phase 3: Session Log — Completed
+
+- [x] Exercise picker (main lifts + accessories).
+- [x] Set entry (weight/reps/warmup/notes).
+- [x] Rest timer (presets 60/90/120/180s, auto-start on set, survives navigation).
+- [x] Validation.
+- [x] Resume affordance on the Session page (#2).
+- [x] Retroactive date control on the session screen over the P1.1 entry-date model (#3).
+- [x] Duplicate-set button: per-set `2X` + "Repeat Last Set" (#1; glyph changed to `+` in P3.1).
+
+### Phase 3.1: Session Log Refinements — Completed
+
+- [x] Configurable minute/second rest timer with persistence (#8).
+- [x] Navigation back to gym/history (#9).
+- [x] Unit-aware tonnage (#10).
+- [x] Sets grouped by exercise (#11).
+- [x] Editable logged reps (#12).
+- [x] Same-weight sets collapsed to one row (#13).
+- [x] Duplicate-set glyph changed from `2X` to `+` (#14).
+- [x] Structural items (rest-timer persistence, `updateSet`) landed before the layout items that build on them.
+
+### Phase 4: History — Completed
+
+- [x] Reverse-chronological history list.
+- [x] Session detail view.
+- [x] Render retroactively-dated sessions (#3).
+
+### Phase 5: Data Viz — Completed
+
+- [x] Custom SVG pixel chart components.
+- [x] Per-lift screens.
+- [x] Body-weight screen.
+- [x] Manual body-weight entry.
+- [x] Per-exercise working-set aggregation seam (#6).
+
+### Phase 5.1: Demo Visual Consistency — Completed
+
+- [x] Locked top navigation on every screen.
+- [x] Bottom tab bar hidden.
+- [x] `Screen` gains a fixed `header` slot.
+- [x] `NavBar` highlights the active tab (#7).
+- [x] Rest-timer stepper arrow glyphs fixed (#15).
+
+### Phase 6: Gamification & Animations — Completed
+
+- [x] Weekly streak + XP decay from the manual performed date (`Profile.lastActivityDate`, `DB_VERSION` → 4).
+- [x] Trend indicator.
+- [x] XP-to-next-stage bar.
+- [x] Set-complete flash.
+- [x] Workout-complete overlay with avatar growth.
+- [x] Animations use React Native `Animated` (native driver off on web) so no extra dependency is needed.
+- [x] Streak/decay follow backdated workouts (#3).
+- [x] Working-set counts feed Profile stats and the per-exercise seam (#6).
+
+### Phase 6.1: Session Log & XP Refinements — Completed
+
+- [x] Rest timer moved to its own `/rest-timer` screen (#16).
+- [x] Reps edit field constrained to two digits (#17).
+- [x] Reps edit field left-aligned (#18).
+- [x] XP switched from tonnage to 1 per working set (#19).
+- [x] DB v5 rebuild of stored session/profile totals (#19).
+
+### Phase 6.2: Session/Profile IA & Stats — Completed
+
+- [x] `/` is a lean Session entry screen containing only Start/Resume Workout (#20).
+- [x] Avatar and training summary live exclusively on Profile (#20).
+- [x] "Log Past Workout" removed in favor of the session date selector (#21).
+- [x] Body weight editable on Profile (#22).
+- [x] "Decaying" only appears after a full week without training (#23).
+
+### Phase 7.1: App Hosting on the Platform — In progress
+
+- [x] Document the platform contract, SSM values, and preview/prod hostnames (section 7).
+- [x] Add the branch and environment model to the plan.
+- [x] Add PR CI checks (`.github/workflows/ci.yml`).
+- [ ] Confirm platform onboarding: hosted zone, shared certificate, OIDC provider, `iron-altar` preview/prod roles, and the SSM contract.
+- [ ] Scaffold `infra/` as a CDK v2 TypeScript app with environment config, naming/tags, `cdk-nag`, and tests.
+- [ ] Implement the preview and prod `StaticSiteStack` instances: S3, OAC, CloudFront, Route 53 aliases, cache/header behavior, SPA fallback, and app-scoped outputs.
+- [ ] Deploy the preview stack and verify DNS, HTTPS, SPA deep links, headers, caching, and rollback.
+- [ ] Add the automatic `preview` deploy workflow (`preview.yml`).
+- [ ] Add the approved `main` production deploy workflow (`deploy.yml`).
+- [ ] Deploy production, approve, and verify `iron-altar.stevenclarke.dev`.
+- [ ] Link the production URL from the portfolio.
+
+### Phase 7.2: Mobile Release Archive — Not started
+
+- [ ] Add `eas.json`, `dev.stevenclarke.ironaltar` bundle/package IDs, remote version source, and the production profile.
+- [ ] Create the private, versioned, encrypted mobile release bucket in the app CDK stack.
+- [ ] Add the mobile archive workflow (`build-mobile.yml`) for `v*` tags and manual dispatch.
+- [ ] Verify the artifact + metadata layout and SHA-256 checksums.
+- [ ] Keep store submission as a future workflow (out of scope for this phase).
+
+### Phase 7.3: Polish & Launch — Not started
+
+- [ ] Responsive web pass.
+- [ ] Accessibility pass.
+- [ ] Empty states.
+- [ ] Privacy and support pages.
+- [ ] Store listing metadata.
+- [ ] Text-file import (#4, post-MVP candidate; confirm format before building).
 
 ## 6. Feature Refinements (triaged)
 
