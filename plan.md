@@ -473,9 +473,10 @@ infra/
 
 1. **PR checks** (`.github/workflows/ci.yml`, in place): Node 22 via `actions/setup-node`
    with npm cache, `npm ci`, `npm run format:check`, `npm run lint`, `npm run typecheck`,
-   and `npm run build` (`expo export --platform web`). If `infra/` changed, also install its
-   dependencies, run `npm run build`, `npx cdk synth`, and `cdk-nag`/unit tests. PR checks
-   do not assume an AWS role or deploy.
+   and `npm run build` (`expo export --platform web`). A tracked `src/types/expo.d.ts`
+   references `expo/types` so typecheck works in CI without generated files. If `infra/`
+   changed, also install its dependencies, run `npm run build`, `npx cdk synth`, and
+   `cdk-nag`/unit tests. PR checks do not assume an AWS role or deploy.
 2. **Preview deploy** (`preview.yml`, on push to `preview`, plus `workflow_dispatch` with a
    branch input): checks -> assume `vars.PREVIEW_DEPLOY_ROLE_ARN` in the `preview`
    Environment -> `npx cdk diff` -> deploy the preview static-site stack -> build/export the
