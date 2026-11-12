@@ -7,13 +7,15 @@ import { EntryDateStepper } from '@/ui/date-stepper';
 import { NavBar } from '@/ui/nav-bar';
 import { Panel } from '@/ui/panel';
 import { Screen } from '@/ui/screen';
-import { RestTimer } from '@/ui/rest-timer';
+import { SetCompleteFlash } from '@/ui/set-complete-flash';
 import { PixelText } from '@/ui/text';
+import { WorkoutCompleteOverlay } from '@/ui/workout-complete';
 import { Fonts, FontSizes, Palette, Spacing } from '@/constants/theme';
 import { exerciseRepository } from '@/data/repositories/exercise-repository';
 import { sessionRepository } from '@/data/repositories/session-repository';
 import { groupSetsByExercise, type ExerciseGroup, type WeightRow } from '@/domain/session';
 import { formatWeight, fromDisplay, UNIT_LABEL } from '@/domain/units';
+import { clampXp, xpFromSet } from '@/domain/xp';
 import { useProfileStore } from '@/state/profile-store';
 import { useRestTimer } from '@/state/rest-timer-store';
 import { useSessionStore } from '@/state/session-store';
@@ -22,7 +24,7 @@ export default function SessionScreen() {
   useLocalSearchParams<{ id: string }>();
   const profile = useProfileStore((s) => s.profile);
   const unitPref = profile?.unitPref ?? 'kg';
-  const addXp = useProfileStore((s) => s.addXp);
+  const recordWorkout = useProfileStore((s) => s.recordWorkout);
 
   const active = useSessionStore((s) => s.active);
   const addSet = useSessionStore((s) => s.addSet);
@@ -44,14 +46,43 @@ export default function SessionScreen() {
   const [warmup, setWarmup] = useState(false);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState<{ id: number; xp: number; label: string } | null>(null);
+  const [completion, setCompletion] = useState<{
+    xpEarned: number;
+    xpBefore: number;
+    xpAfter: number;
+  } | null>(null);
+
+  const closeCompletion = () => {
+    setCompletion(null);
+    router.back();
+  };
+
+  const completionOverlay = (
+    <WorkoutCompleteOverlay
+      visible={completion !== null}
+      xpEarned={completion?.xpEarned ?? 0}
+      xpBefore={completion?.xpBefore ?? 0}
+      xpAfter={completion?.xpAfter ?? 0}
+      onDone={closeCompletion}
+    />
+  );
 
   if (!active) {
     return (
-      <Screen>
-        <NavBar />
-        <PixelText variant="heading">NO ACTIVE SESSION</PixelText>
-        <PixelButton label="Back to Gym" onPress={() => router.back()} />
-      </Screen>
+      <>
+        <Screen header={<NavBar />}>
+          {completion ? (
+            <PixelText variant="heading">SESSION SAVED</PixelText>
+          ) : (
+            <>
+              <PixelText variant="heading">NO ACTIVE SESSION</PixelText>
+              <PixelButton label="Back to Session" onPress={() => router.back()} />
+            </>
+          )}
+        </Screen>
+        {completionOverlay}
+      </>
     );
   }
 
@@ -72,12 +103,18 @@ export default function SessionScreen() {
       return;
     }
     setError(null);
+    const weightKg = fromDisplay(parsedWeight, unitPref);
     addSet({
       exerciseId,
-      weightKg: fromDisplay(parsedWeight, unitPref),
+      weightKg,
       reps: parsedReps,
       isWarmup: warmup,
       notes: notes.trim() || undefined,
+    });
+    setFlash({
+      id: Date.now(),
+      xp: xpFromSet({ isWarmup: warmup }),
+      label: warmup ? 'WARMUP LOGGED' : 'SET LOGGED',
     });
     setWeight('');
     setReps('');
@@ -85,131 +122,163 @@ export default function SessionScreen() {
     startRest(restDuration);
   };
 
+  const duplicateWithFlash = (setId: string) => {
+    const source = active.sets.find((set) => set.id === setId);
+    duplicateSet(setId);
+    if (source) {
+      setFlash({
+        id: Date.now(),
+        xp: xpFromSet(source),
+        label: source.isWarmup ? 'WARMUP LOGGED' : 'SET LOGGED',
+      });
+    }
+  };
+
   const finish = () => {
+    const xpEarned = xp;
+    const xpBefore = profile?.xp ?? 0;
+    const xpAfter = clampXp(xpBefore + xpEarned);
     sessionRepository.complete(active);
-    if (xp > 0) addXp(xp);
+    recordWorkout(xpEarned, active.date);
     discard();
-    router.back();
+    setCompletion({ xpEarned, xpBefore, xpAfter });
   };
 
   return (
-    <Screen>
-      <NavBar />
-
-      <View style={styles.header}>
-        <PixelText variant="heading">SESSION LOG</PixelText>
-        <PixelText variant="caption" color={Palette.textSecondary}>
-          {formatWeight(volumeKg, unitPref)} tonnage · {xp.toFixed(0)} XP
-        </PixelText>
-      </View>
-
-      <RestTimer />
-
-      <Panel>
-        <EntryDateStepper date={active.date} onChange={setEntryDate} />
-      </Panel>
-
-      <Panel>
-        <PixelText variant="label" color={Palette.textSecondary}>
-          Exercise
-        </PixelText>
-        <View style={styles.chips}>
-          {[...mainLifts, ...accessories].map((exercise) => (
-            <Pressable key={exercise.id} onPress={() => setExerciseId(exercise.id)}>
-              <View style={[styles.chip, exercise.id === exerciseId && styles.chipActive]}>
-                <PixelText variant="caption">{exercise.name}</PixelText>
-              </View>
-            </Pressable>
-          ))}
+    <>
+      <Screen header={<NavBar />}>
+        <View style={styles.header}>
+          <PixelText variant="heading">SESSION LOG</PixelText>
+          <PixelText variant="caption" color={Palette.textSecondary}>
+            {formatWeight(volumeKg, unitPref)} tonnage · {xp.toFixed(0)} XP
+          </PixelText>
         </View>
-      </Panel>
-
-      <Panel>
-        <View style={styles.inputRow}>
-          <View style={styles.inputHalf}>
-            <PixelText variant="label" color={Palette.textSecondary}>
-              Weight ({UNIT_LABEL[unitPref]})
-            </PixelText>
-            <TextInput
-              value={weight}
-              onChangeText={setWeight}
-              keyboardType="decimal-pad"
-              placeholder="0"
-              placeholderTextColor={Palette.textMuted}
-              style={styles.input}
-            />
-          </View>
-          <View style={styles.inputHalf}>
-            <PixelText variant="label" color={Palette.textSecondary}>
-              Reps
-            </PixelText>
-            <TextInput
-              value={reps}
-              onChangeText={setReps}
-              keyboardType="number-pad"
-              placeholder="0"
-              placeholderTextColor={Palette.textMuted}
-              style={styles.input}
-            />
-          </View>
-        </View>
-
-        <TextInput
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="Notes (RPE, form, superset...)"
-          placeholderTextColor={Palette.textMuted}
-          style={styles.input}
-        />
 
         <PixelButton
-          label={warmup ? 'Warmup: On' : 'Warmup: Off'}
-          variant={warmup ? 'primary' : 'secondary'}
-          onPress={() => setWarmup((w) => !w)}
+          label="Rest Timer"
+          variant="secondary"
+          onPress={() => router.push('/rest-timer')}
         />
-        {error && (
-          <PixelText variant="caption" color={Palette.danger}>
-            {error}
-          </PixelText>
-        )}
-        <PixelButton label="Log Set" onPress={submitSet} />
-        {lastSet && (
-          <PixelButton
-            label="Repeat Last Set"
-            variant="secondary"
-            onPress={() => duplicateSet(lastSet.id)}
-          />
-        )}
-      </Panel>
 
-      {groups.length > 0 && (
+        <View style={styles.flashAnchor}>
+          {flash && (
+            <SetCompleteFlash
+              key={flash.id}
+              xp={flash.xp}
+              label={flash.label}
+              onDone={() => setFlash(null)}
+            />
+          )}
+        </View>
+
+        <Panel>
+          <EntryDateStepper date={active.date} onChange={setEntryDate} />
+        </Panel>
+
         <Panel>
           <PixelText variant="label" color={Palette.textSecondary}>
-            Logged Sets
+            Exercise
           </PixelText>
-          {groups.map((group) => (
-            <ExerciseGroupBlock
-              key={group.exerciseId}
-              group={group}
-              unitPref={unitPref}
-              onDuplicate={duplicateSet}
-              onRemove={removeSet}
-              onUpdateReps={(setId, nextReps) => updateSet(setId, { reps: nextReps })}
-            />
-          ))}
+          <View style={styles.chips}>
+            {[...mainLifts, ...accessories].map((exercise) => (
+              <Pressable key={exercise.id} onPress={() => setExerciseId(exercise.id)}>
+                <View style={[styles.chip, exercise.id === exerciseId && styles.chipActive]}>
+                  <PixelText variant="caption">{exercise.name}</PixelText>
+                </View>
+              </Pressable>
+            ))}
+          </View>
         </Panel>
-      )}
 
-      <PixelButton label="Finish Workout" onPress={finish} />
-      <PixelButton
-        label="Discard"
-        variant="danger"
-        onPress={() => {
-          discard();
-          router.back();
-        }}
-      />
-    </Screen>
+        <Panel>
+          <View style={styles.inputRow}>
+            <View style={styles.inputHalf}>
+              <PixelText variant="label" color={Palette.textSecondary}>
+                Weight ({UNIT_LABEL[unitPref]})
+              </PixelText>
+              <TextInput
+                value={weight}
+                onChangeText={setWeight}
+                keyboardType="decimal-pad"
+                placeholder="0"
+                placeholderTextColor={Palette.textMuted}
+                style={styles.input}
+              />
+            </View>
+            <View style={styles.inputHalf}>
+              <PixelText variant="label" color={Palette.textSecondary}>
+                Reps
+              </PixelText>
+              <TextInput
+                value={reps}
+                onChangeText={setReps}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={Palette.textMuted}
+                style={styles.input}
+              />
+            </View>
+          </View>
+
+          <TextInput
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="Notes (RPE, form, superset...)"
+            placeholderTextColor={Palette.textMuted}
+            style={styles.input}
+          />
+
+          <PixelButton
+            label={warmup ? 'Warmup: On' : 'Warmup: Off'}
+            variant={warmup ? 'primary' : 'secondary'}
+            onPress={() => setWarmup((w) => !w)}
+          />
+          {error && (
+            <PixelText variant="caption" color={Palette.danger}>
+              {error}
+            </PixelText>
+          )}
+          <PixelButton label="Log Set" onPress={submitSet} />
+          {lastSet && (
+            <PixelButton
+              label="Repeat Last Set"
+              variant="secondary"
+              onPress={() => duplicateWithFlash(lastSet.id)}
+            />
+          )}
+        </Panel>
+
+        {groups.length > 0 && (
+          <Panel>
+            <PixelText variant="label" color={Palette.textSecondary}>
+              Logged Sets
+            </PixelText>
+            {groups.map((group) => (
+              <ExerciseGroupBlock
+                key={group.exerciseId}
+                group={group}
+                unitPref={unitPref}
+                onDuplicate={duplicateWithFlash}
+                onRemove={removeSet}
+                onUpdateReps={(setId, nextReps) => updateSet(setId, { reps: nextReps })}
+              />
+            ))}
+          </Panel>
+        )}
+
+        <PixelButton label="Finish Workout" onPress={finish} disabled={active.sets.length === 0} />
+        <PixelButton
+          label="Discard"
+          variant="danger"
+          onPress={() => {
+            discard();
+            router.back();
+          }}
+        />
+      </Screen>
+
+      {completionOverlay}
+    </>
   );
 }
 
@@ -286,12 +355,18 @@ function WeightRowLine({
       </View>
 
       <View style={styles.setActions}>
-        <Pressable onPress={() => onDuplicate(row.setIds[row.setIds.length - 1])} hitSlop={Spacing.two}>
+        <Pressable
+          onPress={() => onDuplicate(row.setIds[row.setIds.length - 1])}
+          hitSlop={Spacing.two}
+        >
           <PixelText variant="heading" color={Palette.gold}>
             +
           </PixelText>
         </Pressable>
-        <Pressable onPress={() => onRemove(row.setIds[row.setIds.length - 1])} hitSlop={Spacing.two}>
+        <Pressable
+          onPress={() => onRemove(row.setIds[row.setIds.length - 1])}
+          hitSlop={Spacing.two}
+        >
           <PixelText variant="label" color={Palette.danger}>
             X
           </PixelText>
@@ -335,6 +410,12 @@ function RepField({ reps, onCommit }: { reps: number; onCommit: (next: number) =
 const styles = StyleSheet.create({
   header: {
     gap: Spacing.one,
+  },
+  flashAnchor: {
+    height: 0,
+    alignItems: 'center',
+    zIndex: 10,
+    elevation: 4,
   },
   chips: {
     flexDirection: 'row',
@@ -394,6 +475,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   repsRow: {
+    flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
@@ -405,8 +487,8 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   repInput: {
-    minWidth: 40,
-    textAlign: 'center',
+    width: 36,
+    textAlign: 'left',
     backgroundColor: Palette.void,
     borderColor: Palette.border,
     borderWidth: 2,

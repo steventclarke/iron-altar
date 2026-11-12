@@ -1,17 +1,43 @@
-import { useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { Avatar } from '@/ui/avatar';
 import { PixelButton } from '@/ui/button';
+import { NavBar } from '@/ui/nav-bar';
 import { Panel } from '@/ui/panel';
 import { Screen } from '@/ui/screen';
 import { PixelText } from '@/ui/text';
 import { Fonts, FontSizes, Palette, Spacing } from '@/constants/theme';
+import { bodyWeightRepository } from '@/data/repositories/body-weight-repository';
+import { sessionRepository } from '@/data/repositories/session-repository';
+import { formatCalendarDate } from '@/domain/date';
+import { trainingSummary, trendDisplay } from '@/domain/gamification';
+import { workingSetsByExercise } from '@/domain/progress';
 import type { UnitPreference } from '@/domain/types';
-import { stageInfoForXp } from '@/domain/xp';
+import { formatWeight, fromDisplay, toDisplay, UNIT_LABEL } from '@/domain/units';
+import { stageInfoForXp, X_PER_WEEK_DECAY } from '@/domain/xp';
 import { useProfileStore } from '@/state/profile-store';
 
 const UNITS: UnitPreference[] = ['kg', 'lb', 'st'];
+
+function loadStats() {
+  const sets = sessionRepository.allSets();
+  const counts = workingSetsByExercise(sets);
+  const bodyWeight = bodyWeightRepository.latest();
+
+  return {
+    summary: trainingSummary(sessionRepository.all()),
+    totalWorkingSets: Object.values(counts).reduce((total, count) => total + count, 0),
+    bodyWeightId: bodyWeight?.id ?? null,
+    bodyWeightKg: bodyWeight?.weightKg ?? null,
+  };
+}
+
+function weightInputValue(weightKg: number | null, unit: UnitPreference): string {
+  if (weightKg === null) return '';
+  return String(Number(toDisplay(weightKg, unit).toFixed(1)));
+}
 
 export default function ProfileScreen() {
   const profile = useProfileStore((s) => s.profile);
@@ -19,10 +45,24 @@ export default function ProfileScreen() {
   const setUnitPref = useProfileStore((s) => s.setUnitPref);
   const reset = useProfileStore((s) => s.reset);
   const [name, setName] = useState('');
+  const [stats, setStats] = useState(loadStats);
+  const [weightInput, setWeightInput] = useState(() =>
+    weightInputValue(stats.bodyWeightKg, profile?.unitPref ?? 'kg'),
+  );
+  const [weightError, setWeightError] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      const next = loadStats();
+      setStats(next);
+      setWeightInput(weightInputValue(next.bodyWeightKg, profile?.unitPref ?? 'kg'));
+      setWeightError(null);
+    }, [profile?.unitPref]),
+  );
 
   if (!profile) {
     return (
-      <Screen>
+      <Screen header={<NavBar />}>
         <PixelText variant="heading">FORGE YOUR PROFILE</PixelText>
         <Panel>
           <PixelText variant="label" color={Palette.textSecondary}>
@@ -42,9 +82,38 @@ export default function ProfileScreen() {
   }
 
   const stage = stageInfoForXp(profile.xp);
+  const trend = trendDisplay(stats.summary.trend);
+  const trendColor =
+    stats.summary.trend === 'up'
+      ? Palette.xpUp
+      : stats.summary.trend === 'down'
+        ? Palette.xpDown
+        : Palette.textSecondary;
+  const progressPercent = Math.min(100, Math.max(0, Math.round(stage.withinStage * 100)));
+  const xpToNext =
+    stage.nextThreshold === null ? null : Math.ceil(stage.nextThreshold - profile.xp);
+
+  const saveBodyWeight = () => {
+    const parsed = Number.parseFloat(weightInput);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setWeightError(`Enter a weight above 0 ${UNIT_LABEL[profile.unitPref]}.`);
+      return;
+    }
+
+    const weightKg = fromDisplay(parsed, profile.unitPref);
+    const updated = stats.bodyWeightId
+      ? bodyWeightRepository.update(stats.bodyWeightId, weightKg)
+      : null;
+    if (!updated) bodyWeightRepository.add(weightKg);
+
+    const next = loadStats();
+    setStats(next);
+    setWeightInput(weightInputValue(next.bodyWeightKg, profile.unitPref));
+    setWeightError(null);
+  };
 
   return (
-    <Screen>
+    <Screen header={<NavBar />}>
       <PixelText variant="heading">PROFILE</PixelText>
 
       <Panel highlight style={styles.avatarPanel}>
@@ -53,7 +122,75 @@ export default function ProfileScreen() {
         <PixelText variant="caption" color={Palette.gold}>
           {stage.name} · {profile.xp} XP
         </PixelText>
+        <View style={styles.xpTrack}>
+          <View style={[styles.xpFill, { width: `${progressPercent}%` }]} />
+        </View>
+        <PixelText variant="caption" color={Palette.textSecondary}>
+          {xpToNext === null || xpToNext <= 0
+            ? 'Peak form reached.'
+            : `${xpToNext} XP to the next stage`}
+        </PixelText>
       </Panel>
+
+      <Panel>
+        <PixelText variant="label" color={Palette.textSecondary}>
+          Training
+        </PixelText>
+        <StatRow label="XP" value={`${profile.xp} / 1000`} />
+        <StatRow
+          label="Streak"
+          value={`${stats.summary.streakWeeks} ${stats.summary.streakWeeks === 1 ? 'week' : 'weeks'}`}
+        />
+        <StatRow label="Trend" value={`${trend.symbol} ${trend.label}`} valueColor={trendColor} />
+        <StatRow label="Working sets" value={String(stats.totalWorkingSets)} />
+        <StatRow
+          label="Last trained"
+          value={
+            stats.summary.lastTrainingDate
+              ? formatCalendarDate(stats.summary.lastTrainingDate)
+              : '—'
+          }
+        />
+      </Panel>
+
+      <Panel>
+        <PixelText variant="label" color={Palette.textSecondary}>
+          Body Weight
+        </PixelText>
+        <View style={styles.weightRow}>
+          <TextInput
+            value={weightInput}
+            onChangeText={(value) => {
+              setWeightInput(value);
+              if (weightError) setWeightError(null);
+            }}
+            onSubmitEditing={saveBodyWeight}
+            keyboardType="decimal-pad"
+            placeholder={`0 ${UNIT_LABEL[profile.unitPref]}`}
+            placeholderTextColor={Palette.textMuted}
+            style={[styles.input, styles.weightInput]}
+          />
+          <PixelButton label={stats.bodyWeightId ? 'Update' : 'Add'} onPress={saveBodyWeight} />
+        </View>
+        {weightError ? (
+          <PixelText variant="caption" color={Palette.danger}>
+            {weightError}
+          </PixelText>
+        ) : (
+          <PixelText variant="caption" color={Palette.textSecondary}>
+            {stats.bodyWeightKg === null
+              ? 'No weigh-in logged yet.'
+              : `Latest ${formatWeight(
+                  stats.bodyWeightKg,
+                  profile.unitPref,
+                )} · updates your latest weigh-in`}
+          </PixelText>
+        )}
+      </Panel>
+
+      <PixelText variant="caption" color={Palette.textMuted}>
+        Miss a full week of training and Milo loses {X_PER_WEEK_DECAY} XP.
+      </PixelText>
 
       <Panel>
         <PixelText variant="label" color={Palette.textSecondary}>
@@ -77,10 +214,50 @@ export default function ProfileScreen() {
   );
 }
 
+function StatRow({
+  label,
+  value,
+  valueColor = Palette.text,
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
+  return (
+    <View style={styles.statRow}>
+      <PixelText variant="label" color={Palette.textSecondary}>
+        {label}
+      </PixelText>
+      <PixelText variant="body" color={valueColor}>
+        {value}
+      </PixelText>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   avatarPanel: {
     alignItems: 'center',
     paddingVertical: Spacing.four,
+  },
+  xpTrack: {
+    width: '100%',
+    height: 8,
+    backgroundColor: Palette.void,
+    borderWidth: 2,
+    borderColor: Palette.border,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  xpFill: {
+    height: '100%',
+    backgroundColor: Palette.gold,
+  },
+  statRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: Spacing.two,
   },
   input: {
     backgroundColor: Palette.void,
@@ -92,6 +269,14 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.lg,
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
+  },
+  weightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  weightInput: {
+    flex: 1,
   },
   unitRow: {
     flexDirection: 'row',

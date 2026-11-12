@@ -1,26 +1,24 @@
 import { router } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
 
-import { Avatar } from '@/ui/avatar';
 import { PixelButton } from '@/ui/button';
+import { NavBar } from '@/ui/nav-bar';
 import { Panel } from '@/ui/panel';
 import { Screen } from '@/ui/screen';
 import { PixelText } from '@/ui/text';
-import { Palette, Spacing } from '@/constants/theme';
-import { addCalendarDays, formatCalendarDate, todayCalendarDate } from '@/domain/date';
-import { stageInfoForXp } from '@/domain/xp';
+import { Palette } from '@/constants/theme';
+import { formatCalendarDate } from '@/domain/date';
 import { useProfileStore } from '@/state/profile-store';
 import { useSessionStore } from '@/state/session-store';
 
-export default function DungeonGymScreen() {
+export default function SessionHomeScreen() {
   const profile = useProfileStore((s) => s.profile);
   const active = useSessionStore((s) => s.active);
   const startSession = useSessionStore((s) => s.start);
 
   if (!profile) {
     return (
-      <Screen>
-        <PixelText variant="title">IRON ALTAR</PixelText>
+      <Screen header={<NavBar />}>
+        <PixelText variant="title">SESSION</PixelText>
         <Panel highlight>
           <PixelText variant="body" color={Palette.textSecondary}>
             No warrior yet. Forge your profile to begin the path of Milo.
@@ -30,8 +28,6 @@ export default function DungeonGymScreen() {
       </Screen>
     );
   }
-
-  const stage = stageInfoForXp(profile.xp);
 
   const openActiveSession = () => {
     const current = useSessionStore.getState().active;
@@ -43,35 +39,19 @@ export default function DungeonGymScreen() {
     openActiveSession();
   };
 
-  const beginPastWorkout = () => {
-    startSession(addCalendarDays(todayCalendarDate(), -1));
-    openActiveSession();
-  };
-
   return (
-    <Screen>
-      <PixelText variant="title">DUNGEON GYM</PixelText>
-
-      <Panel highlight style={styles.avatarPanel}>
-        <Avatar stageIndex={stage.index} />
-        <PixelText variant="heading" color={Palette.gold}>
-          {stage.name}
-        </PixelText>
-        <PixelText variant="caption" color={Palette.textSecondary}>
-          Stage {stage.index + 1} / 10
-        </PixelText>
-      </Panel>
-
-      <Panel>
-        <StatRow label="XP" value={`${profile.xp} / 1000`} />
-        <StatRow label="Streak" value="0 weeks" />
-        <StatRow label="Trend" value="—" />
-      </Panel>
+    <Screen header={<NavBar />}>
+      <PixelText variant="title">SESSION</PixelText>
+      <PixelText variant="body" color={Palette.textSecondary}>
+        {active
+          ? 'Resume your workout in progress.'
+          : 'Start a workout. Use the date selector in the session log to backdate it.'}
+      </PixelText>
 
       {active ? (
         <Panel highlight>
           <PixelText variant="label" color={Palette.gold}>
-            Work In Progress
+            WORK IN PROGRESS
           </PixelText>
           <PixelText variant="body" color={Palette.textSecondary}>
             {formatCalendarDate(active.date)} · {active.sets.length} sets logged
@@ -81,33 +61,6 @@ export default function DungeonGymScreen() {
       ) : (
         <PixelButton label="Start Workout" onPress={beginWorkout} />
       )}
-
-      {!active && (
-        <PixelButton label="Log Past Workout" variant="secondary" onPress={beginPastWorkout} />
-      )}
     </Screen>
   );
 }
-
-function StatRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.statRow}>
-      <PixelText variant="label" color={Palette.textSecondary}>
-        {label}
-      </PixelText>
-      <PixelText variant="body">{value}</PixelText>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  avatarPanel: {
-    alignItems: 'center',
-    paddingVertical: Spacing.four,
-  },
-  statRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-});

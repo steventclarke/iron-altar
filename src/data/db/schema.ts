@@ -10,7 +10,7 @@ import type {
 /** Storage key for the persisted document. */
 export const DB_KEY = 'iron-altar/db';
 /** Current document schema version — bump when the shape changes. */
-export const DB_VERSION = 3;
+export const DB_VERSION = 5;
 
 /** Default rest length (seconds) when the user has not chosen one. */
 export const DEFAULT_REST_SECONDS = 60;

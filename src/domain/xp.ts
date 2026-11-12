@@ -1,4 +1,5 @@
-import type { SetEntry } from '@/domain/types';
+import { isCalendarDate, toCalendarDate } from '@/domain/date';
+import type { CalendarDate, SetEntry } from '@/domain/types';
 
 /** Hard cap on the XP / growth scale. */
 export const MAX_XP = 1000;
@@ -22,10 +23,12 @@ export const STAGE_NAMES = [
   'Demigod',
 ] as const;
 
-/** Total working-set volume (kg x reps) of a single set. Warmups count as 0. */
-export function xpFromSet(set: SetEntry): number {
-  if (set.isWarmup) return 0;
-  return set.weightKg * set.reps;
+/** XP awarded for a single working set; warmups count as 0. */
+export const XP_PER_WORKING_SET = 1;
+
+/** One XP per working set, independent of weight or reps. */
+export function xpFromSet(set: Pick<SetEntry, 'isWarmup'>): number {
+  return set.isWarmup ? 0 : XP_PER_WORKING_SET;
 }
 
 /** Sum working-set XP across a set of entries. */
@@ -79,12 +82,19 @@ export function applyDecay(xp: number, weeks: number): number {
   return clampXp(Math.round(xp - weeks * X_PER_WEEK_DECAY));
 }
 
-/** Whole weeks elapsed between two ISO dates. */
-export function weeksSince(lastDateIso: string, now: Date = new Date()): number {
-  const last = new Date(lastDateIso).getTime();
-  const ms = now.getTime() - last;
-  const dayMs = 24 * 60 * 60 * 1000;
-  return Math.max(0, Math.floor(ms / (dayMs * TRAINING_WEEK_DAYS)));
+/** Days since the Unix epoch for a calendar date (UTC-normalized, DST-proof). */
+function calendarDayNumber(date: CalendarDate): number {
+  return (
+    Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))) /
+    (24 * 60 * 60 * 1000)
+  );
+}
+
+/** Whole training weeks elapsed between the last activity day and today. */
+export function weeksSince(lastDate: string, now: Date = new Date()): number {
+  const last = isCalendarDate(lastDate) ? lastDate : toCalendarDate(new Date(lastDate));
+  const days = Math.round(calendarDayNumber(toCalendarDate(now)) - calendarDayNumber(last));
+  return Math.max(0, Math.floor(days / TRAINING_WEEK_DAYS));
 }
 
 export function isStreakAlive(lastDateIso: string | null, now: Date = new Date()): boolean {
@@ -93,14 +103,3 @@ export function isStreakAlive(lastDateIso: string | null, now: Date = new Date()
 }
 
 export type XpTrend = 'up' | 'down' | 'flat';
-
-/**
- * Overall XP trend over the recent window: net weekly XP gained vs weekly decay.
- * Positive net => trending up (avatar growing); negative => trending down (decaying).
- */
-export function xpTrend(recentXpGain: number): XpTrend {
-  const net = recentXpGain - X_PER_WEEK_DECAY;
-  if (net > 0) return 'up';
-  if (net < 0) return 'down';
-  return 'flat';
-}

@@ -45,8 +45,7 @@ export default function LiftProgressScreen() {
 
   if (!detail) {
     return (
-      <Screen>
-        <NavBar />
+      <Screen header={<NavBar />}>
         <PixelText variant="heading">LIFT NOT FOUND</PixelText>
         <PixelButton label="Back to Progress" onPress={() => router.back()} />
       </Screen>
@@ -73,9 +72,7 @@ export default function LiftProgressScreen() {
   }));
 
   return (
-    <Screen>
-      <NavBar />
-
+    <Screen header={<NavBar />}>
       <View style={styles.header}>
         <PixelText variant="heading">{name.toUpperCase()}</PixelText>
         <PixelText variant="caption" color={Palette.textSecondary}>

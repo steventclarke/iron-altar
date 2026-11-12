@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { PixelText } from '@/ui/text';
@@ -9,32 +9,50 @@ type NavLink = {
   href: string;
 };
 
-const SESSION_LINKS: NavLink[] = [
-  { label: 'GYM', href: '/' },
+const NAV_LINKS: NavLink[] = [
+  { label: 'SESSION', href: '/' },
   { label: 'HISTORY', href: '/history' },
   { label: 'PROGRESS', href: '/progress' },
   { label: 'PROFILE', href: '/profile' },
 ];
 
+function isActive(pathname: string, href: string): boolean {
+  if (href === '/') {
+    return pathname === '/' || pathname.startsWith('/session/') || pathname === '/rest-timer';
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 /**
- * Compact navigation bar for screens that sit outside the tab navigator (e.g.
- * the Session Log), so the user can jump back to the gym or history to
- * reference past sessions (refinement #9).
+ * Persistent top navigation, rendered as a fixed `Screen` header on every
+ * screen (refinement #7). Uses `navigate` so tapping a tab focuses it instead
+ * of stacking duplicate screens.
  */
-export function NavBar({ links = SESSION_LINKS }: { links?: NavLink[] }) {
+export function NavBar({ links = NAV_LINKS }: { links?: NavLink[] }) {
+  const pathname = usePathname();
+
   return (
     <View style={styles.bar}>
-      {links.map((link) => (
-        <Pressable
-          key={link.href}
-          onPress={() => router.push(link.href as never)}
-          style={({ pressed }) => [styles.item, pressed && styles.pressed]}
-        >
-          <PixelText variant="label" color={Palette.textSecondary}>
-            {link.label}
-          </PixelText>
-        </Pressable>
-      ))}
+      {links.map((link) => {
+        const active = isActive(pathname, link.href);
+        return (
+          <Pressable
+            key={link.href}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            onPress={() => router.navigate(link.href as never)}
+            style={({ pressed }) => [
+              styles.item,
+              active && styles.activeItem,
+              pressed && styles.pressed,
+            ]}
+          >
+            <PixelText variant="label" color={active ? Palette.gold : Palette.textSecondary}>
+              {link.label}
+            </PixelText>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -54,6 +72,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingVertical: Spacing.one,
+  },
+  activeItem: {
+    backgroundColor: Palette.surfaceRaised,
+    borderBottomWidth: Border.thick,
+    borderBottomColor: Palette.gold,
   },
   pressed: {
     backgroundColor: Palette.surfacePressed,
