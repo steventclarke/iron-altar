@@ -3,6 +3,10 @@ name: Deploy (preview)
 on:
   push:
     branches: [preview]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/workflows/**'
   workflow_dispatch:
     inputs:
       branch:
