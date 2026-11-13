@@ -69,8 +69,6 @@ export class StaticSiteStack extends cdk.Stack {
       defaultTtl: cdk.Duration.seconds(0),
       maxTtl: cdk.Duration.seconds(0),
       minTtl: cdk.Duration.seconds(0),
-      enableAcceptEncodingGzip: true,
-      enableAcceptEncodingBrotli: true,
     });
 
     const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(

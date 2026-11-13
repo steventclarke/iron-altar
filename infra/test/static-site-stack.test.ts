@@ -78,6 +78,23 @@ describe('StaticSiteStack', () => {
     });
   });
 
+  test('disables compression cache keys when caching is disabled', () => {
+    const template = siteTemplate('preview');
+
+    template.hasResourceProperties('AWS::CloudFront::CachePolicy', {
+      CachePolicyConfig: Match.objectLike({
+        Name: 'iron-altar-preview-site-no-cache',
+        DefaultTTL: 0,
+        MaxTTL: 0,
+        MinTTL: 0,
+        ParametersInCacheKeyAndForwardedToOrigin: Match.objectLike({
+          EnableAcceptEncodingGzip: false,
+          EnableAcceptEncodingBrotli: false,
+        }),
+      }),
+    });
+  });
+
   test('creates A and AAAA alias records', () => {
     const template = siteTemplate('preview');
 
