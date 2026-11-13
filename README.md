@@ -17,8 +17,8 @@ app, and supports two deployments: `preview` and `prod`.
 - [plan.md](./plan.md) - Build plan, phases, decisions, and status
 - `src/` - Expo Router screens, domain logic, data layer, state, and UI
 - `assets/` - Fonts, sprites, and app icons
-- `infra/` - Application CDK stack (S3, CloudFront, DNS records) — planned in P7.1
-- `.github/workflows/` - CI workflow (deploy workflows land in P7.1)
+- `infra/` - Application CDK app (S3, CloudFront, DNS records, mobile release bucket)
+- `.github/workflows/` - CI, preview deploy, and production deploy workflows
 
 ## Hostnames
 
@@ -74,21 +74,31 @@ library with native code, use a development build (`npx expo run:ios|android` or
 
 ## Application infrastructure (CDK)
 
-Application infrastructure will live in `infra/` and read shared values from SSM (domain
+Application infrastructure lives in `infra/` and reads shared values from SSM (domain
 name, hosted-zone ID, wildcard certificate ARN published by the platform) rather than
-hardcoding them. It is planned as part of P7.1.
+hardcoding them. The app uses the platform's existing CDK bootstrap and never runs
+`cdk bootstrap` itself.
+
+Stacks:
+
+- `iron-altar-preview-site` / `iron-altar-prod-site` — private S3 origin behind CloudFront
+  (OAC), cache and security headers, SPA fallback, and Route 53 A/AAAA alias records.
+- `iron-altar-prod-release` — private, versioned, encrypted bucket for signed mobile
+  artifacts.
 
 ```bash
 cd infra
 npm install
 npm run build
+npm test
 npx cdk synth -c environment=preview   # or -c environment=prod
 npx cdk diff -c environment=preview
 npx cdk deploy -c environment=preview --all
 ```
 
-The stack will use Origin Access Control (OAC), create its own DNS records in the shared
-hosted zone, and be tagged `project`, `environment`, `owner`, `application`, `managed-by`.
+Stacks use Origin Access Control (OAC), create their own DNS records in the shared hosted
+zone, and are tagged `project`, `environment`, `owner`, `application`, `managed-by` (plus
+`Environment` for the platform preview-cleanup guardrail).
 
 ## Branch conventions
 
@@ -103,23 +113,24 @@ hosted zone, and be tagged `project`, `environment`, `owner`, `application`, `ma
 
 CI runs on every pull request and on pushes to `main`:
 
-- `npm ci`
-- `npm run format:check`
-- `npm run lint`
-- `npm run typecheck`
-- `npm run build`
+- App: `npm ci`, `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm run build`
+- Infrastructure: `npm ci`, `npm run build`, `npm test`, and `npx cdk synth` for preview
+  and prod
 
-Continuous deployment via GitHub Actions with OIDC (no long-lived AWS keys) lands with the
-CDK infrastructure in P7.1:
+Continuous deployment uses GitHub Actions with OIDC (no long-lived AWS keys):
 
-- Merge to `preview` → auto-deploy `iron-altar-preview.stevenclarke.dev` using
-  `iron-altar-deploy-preview`.
-- Merge to `main` → deploy `iron-altar.stevenclarke.dev` using `iron-altar-deploy-prod`
-  after manual approval through the `production` GitHub Environment.
+- Push to `preview` → `preview.yml` assumes `iron-altar-deploy-preview`, deploys
+  `iron-altar-preview-site`, syncs the web export to S3, and invalidates CloudFront.
+- Push to `main` → `deploy.yml` waits for approval through the `production` GitHub
+  Environment, assumes `iron-altar-deploy-prod`, deploys the prod stacks, syncs the web
+  export, and invalidates CloudFront.
 
-Before the first deploy, set the GitHub repository variables `DEPLOY_ROLE_ARN` (prod) and
-`PREVIEW_DEPLOY_ROLE_ARN` (preview) from the platform SSM parameters
-(`/platform/roles/iron-altar/{prod,preview}/deploy-role-arn`).
+The workflows read `vars.PREVIEW_DEPLOY_ROLE_ARN` and `vars.DEPLOY_ROLE_ARN`, set from
+`/platform/roles/iron-altar/{preview,prod}/deploy-role-arn` in `us-east-2`.
+
+The web export is uploaded in three passes: immutable `_expo/static/*` bundles, short-cache
+assets, and no-cache `index.html`/`deployment.json`. `deployment.json` records the
+environment, commit, ref, and deploy time.
 
 ## Contributing
 
