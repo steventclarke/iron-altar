@@ -254,7 +254,7 @@ Notes:
 - [x] Confirm platform onboarding: hosted zone, shared certificate, OIDC provider, `iron-altar` preview/prod roles, and the SSM contract (SSM parameters and deploy roles verified in `us-east-2`).
 - [x] Scaffold `infra/` as a CDK v2 TypeScript app with environment config, naming/tags, `cdk-nag`, and tests.
 - [x] Implement the preview and prod `StaticSiteStack` instances: S3, OAC, CloudFront, Route 53 aliases, cache/header behavior, SPA fallback, and app-scoped outputs.
-- [ ] Deploy the preview stack and verify DNS, HTTPS, SPA deep links, headers, caching, and rollback. **In progress:** the first deploy rolled back on an invalid CloudFront no-cache policy (compression cache keys cannot be enabled when caching is disabled); the fix is applied and redeploying.
+- [x] Deploy the preview stack and verify DNS, HTTPS, SPA deep links, headers, caching, and rollback. Preview is live at https://iron-altar-preview.stevenclarke.dev; the first failed deploy rolled back cleanly, and the corrected deploy passed.
 - [x] Add the automatic `preview` deploy workflow (`preview.yml`).
 - [x] Add the approved `main` production deploy workflow (`deploy.yml`).
 - [ ] Deploy production, approve, and verify `iron-altar.stevenclarke.dev`.
@@ -336,7 +336,7 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
   editing (#22); week-gated decaying trend (#23).
 - **P7 Hosting & Ship (in progress):** P7.1 app CDK hosting on the shared platform +
   GitHub Actions (#24; platform contract verified, `infra/` stacks and preview/prod deploy
-  workflows in place, live deployment pending); P7.2 EAS mobile artifacts archived to
+  workflows in place, preview live, production deployment pending); P7.2 EAS mobile artifacts archived to
   versioned S3 (release bucket stack in place; EAS workflow pending); P7.3 responsive web,
   accessibility, empty states, privacy/support pages, store listing metadata, and text-file
   import (#4) — post-MVP candidate; confirm format before building.
