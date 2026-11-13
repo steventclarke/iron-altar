@@ -246,7 +246,7 @@ Notes:
 - [x] Body weight editable on Profile (#22).
 - [x] "Decaying" only appears after a full week without training (#23).
 
-### Phase 7.1: App Hosting on the Platform — In progress
+### Phase 7.1: App Hosting on the Platform — In progress (production live; portfolio link pending)
 
 - [x] Document the platform contract, SSM values, and preview/prod hostnames (section 7).
 - [x] Add the branch and environment model to the plan.
@@ -257,8 +257,8 @@ Notes:
 - [x] Deploy the preview stack and verify DNS, HTTPS, SPA deep links, headers, caching, and rollback. Preview is live at https://iron-altar-preview.stevenclarke.dev; the first failed deploy rolled back cleanly, and the corrected deploy passed.
 - [x] Add the automatic `preview` deploy workflow (`preview.yml`).
 - [x] Add the approved `main` production deploy workflow (`deploy.yml`).
-- [ ] Deploy production, approve, and verify `iron-altar.stevenclarke.dev`.
-- [ ] Link the production URL from the portfolio.
+- [x] Deploy production, approve, and verify `iron-altar.stevenclarke.dev`. Production is live at https://iron-altar.stevenclarke.dev; the production environment approval was granted and the deploy passed.
+- [ ] Link the production URL from the portfolio (`https://iron-altar.stevenclarke.dev`; the portfolio currently uses `https://ironaltar.stevenclarke.dev`).
 
 ### Phase 7.2: Mobile Release Archive — In progress
 
@@ -336,7 +336,7 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
   editing (#22); week-gated decaying trend (#23).
 - **P7 Hosting & Ship (in progress):** P7.1 app CDK hosting on the shared platform +
   GitHub Actions (#24; platform contract verified, `infra/` stacks and preview/prod deploy
-  workflows in place, preview live, production deployment pending); P7.2 EAS mobile artifacts archived to
+  workflows in place, preview and production live, portfolio link pending); P7.2 EAS mobile artifacts archived to
   versioned S3 (release bucket stack in place; EAS workflow pending); P7.3 responsive web,
   accessibility, empty states, privacy/support pages, store listing metadata, and text-file
   import (#4) — post-MVP candidate; confirm format before building.
