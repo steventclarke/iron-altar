@@ -254,7 +254,7 @@ Notes:
 - [x] Confirm platform onboarding: hosted zone, shared certificate, OIDC provider, `iron-altar` preview/prod roles, and the SSM contract (SSM parameters and deploy roles verified in `us-east-2`).
 - [x] Scaffold `infra/` as a CDK v2 TypeScript app with environment config, naming/tags, `cdk-nag`, and tests.
 - [x] Implement the preview and prod `StaticSiteStack` instances: S3, OAC, CloudFront, Route 53 aliases, cache/header behavior, SPA fallback, and app-scoped outputs.
-- [ ] Deploy the preview stack and verify DNS, HTTPS, SPA deep links, headers, caching, and rollback.
+- [ ] Deploy the preview stack and verify DNS, HTTPS, SPA deep links, headers, caching, and rollback. **In progress:** the first deploy rolled back on an invalid CloudFront no-cache policy (compression cache keys cannot be enabled when caching is disabled); the fix is applied and redeploying.
 - [x] Add the automatic `preview` deploy workflow (`preview.yml`).
 - [x] Add the approved `main` production deploy workflow (`deploy.yml`).
 - [ ] Deploy production, approve, and verify `iron-altar.stevenclarke.dev`.
