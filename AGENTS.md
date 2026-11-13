@@ -121,14 +121,19 @@ Docs: https://docs.expo.dev/eas/index.md
 
 ## CDK workflow (application infrastructure)
 
-Application infrastructure will live in `infra/` and will read shared values from SSM
-(domain name, hosted-zone ID, wildcard certificate ARN, deploy-role ARNs published by the
-platform) rather than hardcoding them. It is planned as part of P7.1.
+Application infrastructure lives in `infra/` and reads shared values from SSM (domain
+name, hosted-zone ID, wildcard certificate ARN, deploy-role ARNs published by the
+platform) rather than hardcoding them. The app uses the platform's existing CDK bootstrap
+and never runs `cdk bootstrap` itself.
+
+Stacks: `iron-altar-preview-site`, `iron-altar-prod-site`, and
+`iron-altar-prod-release` (mobile artifacts).
 
 ```bash
 cd infra
 npm install
 npm run build                              # tsc
+npm test                                   # CDK assertions + cdk-nag
 npx cdk synth -c environment=preview       # or -c environment=prod
 npx cdk diff -c environment=preview
 npx cdk deploy -c environment=preview --all
@@ -136,8 +141,13 @@ npx cdk deploy -c environment=preview --all
 
 - Use `-c environment=preview|prod` to select the target. Default to `preview` for safety
   when deploying from the workstation.
-- Tag all resources `project`, `environment`, `owner`, `application`, `managed-by`.
+- Tag all resources `project`, `environment`, `owner`, `application`, `managed-by` (plus
+  `Environment` for the platform preview-cleanup guardrail).
 - Use platform deploy roles via GitHub OIDC in CI; do not store long-lived AWS keys.
+  `preview.yml` assumes `vars.PREVIEW_DEPLOY_ROLE_ARN`; `deploy.yml` assumes
+  `vars.DEPLOY_ROLE_ARN` after the `production` Environment approval.
+- `cdk synth` runs `cdk-nag` via the CDK policy validation framework; keep the
+  acknowledgments in `infra/lib/*-stack.ts` narrow and documented.
 
 ## Code conventions
 

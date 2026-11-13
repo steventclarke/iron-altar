@@ -251,19 +251,19 @@ Notes:
 - [x] Document the platform contract, SSM values, and preview/prod hostnames (section 7).
 - [x] Add the branch and environment model to the plan.
 - [x] Add PR CI checks (`.github/workflows/ci.yml`).
-- [ ] Confirm platform onboarding: hosted zone, shared certificate, OIDC provider, `iron-altar` preview/prod roles, and the SSM contract.
-- [ ] Scaffold `infra/` as a CDK v2 TypeScript app with environment config, naming/tags, `cdk-nag`, and tests.
-- [ ] Implement the preview and prod `StaticSiteStack` instances: S3, OAC, CloudFront, Route 53 aliases, cache/header behavior, SPA fallback, and app-scoped outputs.
+- [x] Confirm platform onboarding: hosted zone, shared certificate, OIDC provider, `iron-altar` preview/prod roles, and the SSM contract (SSM parameters and deploy roles verified in `us-east-2`).
+- [x] Scaffold `infra/` as a CDK v2 TypeScript app with environment config, naming/tags, `cdk-nag`, and tests.
+- [x] Implement the preview and prod `StaticSiteStack` instances: S3, OAC, CloudFront, Route 53 aliases, cache/header behavior, SPA fallback, and app-scoped outputs.
 - [ ] Deploy the preview stack and verify DNS, HTTPS, SPA deep links, headers, caching, and rollback.
-- [ ] Add the automatic `preview` deploy workflow (`preview.yml`).
-- [ ] Add the approved `main` production deploy workflow (`deploy.yml`).
+- [x] Add the automatic `preview` deploy workflow (`preview.yml`).
+- [x] Add the approved `main` production deploy workflow (`deploy.yml`).
 - [ ] Deploy production, approve, and verify `iron-altar.stevenclarke.dev`.
 - [ ] Link the production URL from the portfolio.
 
-### Phase 7.2: Mobile Release Archive — Not started
+### Phase 7.2: Mobile Release Archive — In progress
 
 - [ ] Add `eas.json`, `dev.stevenclarke.ironaltar` bundle/package IDs, remote version source, and the production profile.
-- [ ] Create the private, versioned, encrypted mobile release bucket in the app CDK stack.
+- [x] Create the private, versioned, encrypted mobile release bucket in the app CDK stack (`iron-altar-prod-release`).
 - [ ] Add the mobile archive workflow (`build-mobile.yml`) for `v*` tags and manual dispatch.
 - [ ] Verify the artifact + metadata layout and SHA-256 checksums.
 - [ ] Keep store submission as a future workflow (out of scope for this phase).
@@ -335,10 +335,11 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
   (#20); "Log Past Workout" removed in favor of the date selector (#21); Profile body-weight
   editing (#22); week-gated decaying trend (#23).
 - **P7 Hosting & Ship (in progress):** P7.1 app CDK hosting on the shared platform +
-  GitHub Actions (#24; PR CI checks in place, CDK/deploy pending); P7.2 EAS mobile
-  artifacts archived to versioned S3; P7.3 responsive web, accessibility, empty states,
-  privacy/support pages, store listing metadata, and text-file import (#4) — post-MVP
-  candidate; confirm format before building.
+  GitHub Actions (#24; platform contract verified, `infra/` stacks and preview/prod deploy
+  workflows in place, live deployment pending); P7.2 EAS mobile artifacts archived to
+  versioned S3 (release bucket stack in place; EAS workflow pending); P7.3 responsive web,
+  accessibility, empty states, privacy/support pages, store listing metadata, and text-file
+  import (#4) — post-MVP candidate; confirm format before building.
 
 ## 7. Hosting & Release Infrastructure (P7.1/P7.2)
 
@@ -408,14 +409,16 @@ merge. See `AGENTS.md` for the full branching and PR workflow.
   - `/platform/certs/us-east-1/wildcard-arn` (mirrored into `us-east-2`)
   - `/platform/roles/iron-altar/preview/deploy-role-arn`
   - `/platform/roles/iron-altar/prod/deploy-role-arn`
-  - `/platform/region`
 - The platform onboarding guide is the source of truth for exact parameter names and CDK
   bootstrap details. The app uses the platform’s existing CDK bootstrap and qualifier; it
   does not run `cdk bootstrap`.
+- `/platform/region` is planned but not yet published; this app pins `us-east-2` in
+  `infra/config/environments.ts`.
 - If CDK asset publishing requires role chaining, the platform grants the app deploy role
   explicit `sts:AssumeRole` access to the bootstrap roles rather than broad account admin.
-- The app’s role trust is branch-scoped: `preview` for the preview role and `main` for the
-  production role.
+- The app’s role trust is environment-scoped: `environment:preview` for the preview role
+  and `environment:production` for the production role. The deploy workflows must run in
+  the matching GitHub Environment.
 - Each app role must include scoped Route 53 record changes, CloudFormation/CDK deployment,
   S3/CloudFront access, and any app-scoped SSM permissions used by the workflows. Missing
   permissions are a platform onboarding change, not a reason to broaden the role.

@@ -35,6 +35,10 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# CDK
+infra/cdk.out/
+infra/cdk-outputs.json
+
 example
 
 # generated native folders
