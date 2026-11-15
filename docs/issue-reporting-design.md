@@ -47,7 +47,9 @@ submission.
 
 - Let a user report a bug or request from inside the app without leaving the app.
 - Include enough context for a developer or coding agent to reproduce and triage the issue.
-- Support screenshot capture without requiring a development build.
+- Support screenshot capture on native and web without requiring a development build.
+- Treat web as the primary near-term reporting target; web captures the visible viewport
+  only.
 - Keep the backend in `stevenclarke-infrastructure`; no hosted issue-reporting SaaS.
 - Make the backend reusable by other tenant apps.
 - Keep operating cost near the existing platform budget.
@@ -77,11 +79,13 @@ It is visible on normal screens and hidden on `/report`.
 When pressed:
 
 1. The client captures the current screen with `react-native-view-shot`.
-2. It navigates to `/report` with the screenshot URI and the originating route as params.
+2. It navigates to `/report` with the screenshot URI/data URI and the originating route as
+   params.
 3. If capture fails, it still opens the form without a screenshot.
 
-On web, screenshot capture is skipped because `expo-file-system` is not supported on web.
-The form still works with diagnostics and text.
+On web, screenshot capture is supported through `react-native-view-shot` and
+`html2canvas-pro`. The capture covers the visible viewport only, which is acceptable for
+the initial web-focused use case. The form still works if capture fails.
 
 ### Report form
 
@@ -124,15 +128,15 @@ so the backend does not create a duplicate issue.
 
 ### 4.1 User-provided data
 
-| Data               | Sent     | Public in issue | Notes                                     |
-| ------------------ | -------- | --------------- | ----------------------------------------- |
-| Category           | Yes      | Yes             | Maps to a `type:*` label                  |
-| Summary            | Yes      | Yes             | Issue title                               |
-| Description        | Yes      | Yes             | “What happened?”                          |
-| Expected behavior  | Optional | Yes             | Omitted when blank                        |
-| Contact            | Optional | Yes             | Public if supplied                        |
-| Screenshot         | Optional | Yes             | Stored in S3 and linked in the issue      |
-| Diagnostics toggle | Yes      | Indirect        | Controls whether diagnostics are included |
+| Data               | Sent     | Public in issue | Notes                                         |
+| ------------------ | -------- | --------------- | --------------------------------------------- |
+| Category           | Yes      | Yes             | Maps to a `type:*` label                      |
+| Summary            | Yes      | Yes             | Issue title                                   |
+| Description        | Yes      | Yes             | “What happened?”                              |
+| Expected behavior  | Optional | Yes             | Omitted when blank                            |
+| Contact            | Optional | Yes             | Public if supplied                            |
+| Screenshot         | Optional | Yes             | Stored in S3 and linked; web is viewport-only |
+| Diagnostics toggle | Yes      | Indirect        | Controls whether diagnostics are included     |
 
 ### 4.2 Automatic diagnostics
 
@@ -255,45 +259,72 @@ authentication.
 
 ### 6.1 New and changed files
 
-| File                            | Change                                              |
-| ------------------------------- | --------------------------------------------------- |
-| `src/app/report.tsx`            | New report form and submission flow                 |
-| `src/app/_layout.tsx`           | Register the `report` stack screen                  |
-| `src/ui/nav-bar.tsx`            | Add report button and screenshot capture trigger    |
-| `src/lib/issue-report.ts`       | Diagnostics, installation ID, API client            |
-| `src/lib/screenshot.ts`         | Screen capture helper                               |
-| `src/constants/issue-report.ts` | API URL, app slug, limits                           |
-| `package.json`                  | Add `expo-file-system` and `react-native-view-shot` |
+| File                            | Change                                                                  |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `src/app/report.tsx`            | New report form and submission flow                                     |
+| `src/app/_layout.tsx`           | Register the `report` stack screen                                      |
+| `src/ui/nav-bar.tsx`            | Add report button and screenshot capture trigger                        |
+| `src/lib/issue-report.ts`       | Diagnostics, installation ID, API client                                |
+| `src/lib/screenshot.ts`         | Screen capture helper                                                   |
+| `src/constants/issue-report.ts` | API URL, app slug, limits                                               |
+| `package.json`                  | Add `expo-file-system`, `react-native-view-shot`, and `html2canvas-pro` |
 
 ### 6.2 Dependencies
 
-Install with Expo’s version resolver:
+Install the Expo-managed packages with Expo’s version resolver:
 
 ```bash
 npx expo install expo-file-system react-native-view-shot
 ```
 
-Both packages are available in Expo Go:
+Install the web capture dependency separately because it is not an Expo-managed package:
+
+```bash
+npm install html2canvas-pro
+```
+
+Dependency roles:
 
 - `react-native-view-shot` supports Android, iOS, web, and Expo Go.
-- `expo-file-system` supports Android, iOS, tvOS, and Expo Go, but not web.
+- `expo-file-system` supports Android, iOS, tvOS, and Expo Go, but not web. It is used only
+  on native to read the captured temporary file.
+- `html2canvas-pro` is the optional web peer dependency used by `react-native-view-shot`
+  to rasterize the page. It is loaded lazily on the first web capture.
 
 No development build or EAS build is required for screenshot capture.
 
 ### 6.3 Screenshot capture
 
-`src/lib/screenshot.ts`:
+`src/lib/screenshot.ts` branches by platform.
 
-1. If `Platform.OS === 'web'`, return `null`.
-2. Use `captureScreen({ format: 'jpg', quality: 0.7, result: 'tmpfile' })`.
-3. If the captured width exceeds 1080 physical pixels, resize proportionally.
-4. Return the temporary file URI.
-5. In `issue-report.ts`, read the file with the Expo FileSystem `File` class:
+**Native (iOS/Android):**
+
+1. Use `captureScreen({ format: 'jpg', quality: 0.7, result: 'tmpfile' })`.
+2. If the captured width exceeds 1080 physical pixels, resize proportionally.
+3. Return the temporary file URI for preview.
+4. In `issue-report.ts`, read the file with the Expo FileSystem `File` class:
    `new File(uri).base64()`.
-6. Delete the temporary file after a successful submission.
-7. Reject files larger than the configured limit (target: 3 MB decoded).
+5. Delete the temporary file after a successful submission.
+6. Reject files larger than the configured limit (target: 3 MB decoded).
 
-The screenshot is optional. Capture failure must not block the report form.
+**Web:**
+
+1. Use `captureScreen({ format: 'jpg', quality: 0.7, result: 'base64' })`.
+2. On web, `captureScreen` rasterizes `document.body`, so the screenshot contains the
+   visible viewport only. Full-page and scrolled-off content are intentionally out of
+   scope for v1.
+3. Do not import or call `expo-file-system` on web. Send the returned base64 string
+   directly.
+4. For the preview, use the base64 value as a `data:image/jpeg;base64,...` source.
+5. Reject captures larger than the configured limit (target: 3 MB decoded).
+
+`react-native-view-shot` on web is backed by `html2canvas-pro`. Basic views, text, and
+images capture well, but `react-native-svg` support is limited. Iron Altar’s chart screens
+may therefore produce imperfect screenshots on web. This is acceptable for v1; the form
+still submits diagnostics and text if the user removes the screenshot.
+
+The screenshot is optional. Capture failure must not block the report form on either
+platform.
 
 ### 6.4 Installation ID
 
@@ -889,6 +920,12 @@ therefore requires a public-report acknowledgement and redacts diagnostics.
 Rejected: `react-native-view-shot` is available in Expo Go, so screenshots do not require a
 development build or EAS build.
 
+### Skipping screenshots on web
+
+Rejected: web is the primary near-term reporting target. `react-native-view-shot` supports
+web through `html2canvas-pro`, so the client can capture the visible viewport without
+native code or a development build. The trade-off is limited SVG/chart fidelity on web.
+
 ---
 
 ## 13. Testing
@@ -898,6 +935,8 @@ development build or EAS build.
 - Unit tests for diagnostics shape and environment detection.
 - Unit tests for error mapping and installation ID persistence.
 - Manual tests in Expo Go on iOS/Android and in the web build.
+- Verify web screenshot capture returns base64 without importing `expo-file-system`.
+- Verify web captures only the visible viewport and still submits when capture fails.
 - Verify screenshot removal, diagnostics toggle, and public acknowledgement gating.
 - Verify retry reuses the same report ID.
 
@@ -967,6 +1006,8 @@ No production deploy should happen before the GitHub App secret is configured.
    same public repository, or be disabled outside production?
 9. **Screenshot redaction:** is manual removal sufficient for v1, or is a crop/redaction
    tool required before public submission?
+10. **Web SVG fidelity:** accept imperfect `react-native-svg` chart captures on web, or
+    disable screenshots on chart routes until fidelity improves?
 
 ---
 
@@ -985,15 +1026,16 @@ No production deploy should happen before the GitHub App secret is configured.
 
 ### Client (`steventclarke/iron-altar`)
 
-- [ ] Install `expo-file-system` and `react-native-view-shot`.
-- [ ] Add `src/lib/screenshot.ts`.
+- [ ] Install `expo-file-system`, `react-native-view-shot`, and `html2canvas-pro`.
+- [ ] Add `src/lib/screenshot.ts` with native `tmpfile` and web `base64` paths.
 - [ ] Add `src/lib/issue-report.ts`.
 - [ ] Add `src/constants/issue-report.ts`.
 - [ ] Add `src/app/report.tsx`.
 - [ ] Add the report button to `src/ui/nav-bar.tsx`.
 - [ ] Register the `report` route in `src/app/_layout.tsx`.
 - [ ] Add tests and run format/lint/typecheck/build.
-- [ ] Verify in Expo Go, web, preview, and production.
+- [ ] Verify web capture (visible viewport only) and native capture in Expo Go, preview,
+      and production.
 
 ### GitHub
 
