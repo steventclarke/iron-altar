@@ -233,18 +233,18 @@ preview shows the exact JSON that will be sent.
 
 Stored internally and/or included in the public issue:
 
-| Data                    | Public                  | Notes                                   |
-| ----------------------- | ----------------------- | --------------------------------------- |
-| `reportId`              | Yes, in hidden metadata | Client-generated UUID; idempotency key  |
-| `installationId`        | Yes, in hidden metadata | Pseudonymous stable install ID          |
-| App slug                | Yes                     | `iron-altar`                            |
-| Environment             | Yes                     | `prod`, `preview`, or `dev`             |
-| Sanitized report JSON   | Yes                     | S3 object linked from the issue         |
-| Report status           | Internal                | `queued`, `created`, `failed`           |
-| GitHub issue number/URL | Internal and issue      | Stored in DynamoDB                      |
-| Viewer IP               | No                      | Transport metadata; rate limiting only  |
-| Rate-limit counters     | No                      | Short TTL                               |
-| Honeypot value          | No                      | Not stored; submission silently dropped |
+| Data                    | Public                  | Notes                                  |
+| ----------------------- | ----------------------- | -------------------------------------- |
+| `reportId`              | Yes, in hidden metadata | Client-generated UUID; idempotency key |
+| `installationId`        | Yes, in hidden metadata | Pseudonymous stable install ID         |
+| App slug                | Yes                     | `iron-altar`                           |
+| Environment             | Yes                     | `prod`, `preview`, or `dev`            |
+| Sanitized report JSON   | Yes                     | S3 object linked from the issue        |
+| Report status           | Internal                | `queued`, `created`, `failed`          |
+| GitHub issue number/URL | Internal and issue      | Stored in DynamoDB                     |
+| Viewer IP               | No                      | Transport metadata; rate limiting only |
+| Rate-limit counters     | No                      | Short TTL                              |
+| Honeypot value          | No                      | Empty for real users; never stored     |
 
 The hidden issue metadata is an HTML comment, so it is technically public in the
 repository even though GitHub does not render it.
@@ -301,8 +301,15 @@ is not included in the public issue; see open question 10.
 
 ### Abuse controls
 
-- **Honeypot:** hidden `website` field. If populated, return a generic success without
-  storing or queueing anything.
+- **Honeypot:** hidden `website` field. The real client sends an empty value and never
+  shows the field to the user; if it is populated, return a generic success without
+  storing or queueing anything. This is a JSON API rather than an HTML form, so it only
+  catches bots that blindly fill every field — a cheap spam filter, not a security
+  control. Because a filled value silently drops the report, the web client must avoid
+  autofill false positives: use a non-autofill-triggering name, `autocomplete="off"`,
+  `tabindex="-1"`, and keep it out of the accessibility tree. Ingest records a
+  `honeypot_triggered` metric (metadata only, never the value) so a false-positive spike is
+  visible.
 - **Origin check:** allow only known Iron Altar and local-development origins.
 - **Rate limits:** DynamoDB atomic counters with TTL.
 - **Payload limits:** JSON body size limit, sanitized app-data/log/stack-trace size limit,
@@ -771,7 +778,8 @@ Example (screenshot truncated):
 | `429`  | Rate limited                 | `{ "error": "rate_limited", "retryAfterSeconds": 3600 }`                |
 | `500`  | Internal error               | `{ "error": "internal_error" }`                                         |
 
-Honeypot submissions return `202` with a fake success and are not stored.
+Honeypot submissions return `202` with the same body shape as an accepted report and are
+not stored.
 
 ### 7.4 CORS
 
@@ -1389,7 +1397,10 @@ native code or a development build. The trade-off is limited SVG/chart fidelity 
 - Rate-limit tests with DynamoDB local or mocked client.
 - Idempotency test: same `reportId` returns the existing report and does not rewrite S3
   objects.
-- Honeypot test: no DynamoDB/S3/SQS writes.
+- Honeypot test: no DynamoDB/S3/SQS writes; the response body matches the accepted-report
+  shape; only the `honeypot_triggered` metadata metric is emitted.
+- Web hidden-field test: the honeypot input is excluded from autofill and the accessibility
+  tree, and a normal submission sends an empty `website`.
 - Screenshot size and content-type tests.
 - Report JSON upload, content, and size tests.
 - Worker tests with mocked Octokit:
