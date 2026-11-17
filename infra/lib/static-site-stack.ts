@@ -3,11 +3,18 @@ import { Construct } from 'constructs';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
-import { applyTags, environments, EnvironmentName, ssmPaths } from '../config/environments';
+import {
+  applyTags,
+  appName,
+  environments,
+  EnvironmentName,
+  ssmPaths,
+} from '../config/environments';
 
 export interface StaticSiteStackProps extends cdk.StackProps {
   readonly environment: EnvironmentName;
@@ -31,7 +38,54 @@ export class StaticSiteStack extends cdk.Stack {
       this,
       ssmPaths.certificateArn,
     );
+    const authUserPoolId = ssm.StringParameter.valueForTypedStringParameterV2(
+      this,
+      ssmPaths.authUserPoolId,
+    );
+    const authDomain = ssm.StringParameter.valueForTypedStringParameterV2(
+      this,
+      ssmPaths.authDomain,
+    );
     const hostname = `${config.hostnamePrefix}.${domainName}`;
+    const siteUrl = `https://${hostname}`;
+
+    const callbackUrls = [`${siteUrl}/auth/callback`, 'ironaltar://auth/callback'];
+    const logoutUrls = [`${siteUrl}/`];
+    if (!config.production) {
+      callbackUrls.push(
+        'http://localhost:8081/auth/callback',
+        'http://127.0.0.1:8081/auth/callback',
+      );
+      logoutUrls.push('http://localhost:8081/', 'http://127.0.0.1:8081/');
+    }
+
+    const sharedUserPool = cognito.UserPool.fromUserPoolId(this, 'SharedUserPool', authUserPoolId);
+    const authClient = new cognito.UserPoolClient(this, 'GoogleSignInClient', {
+      userPool: sharedUserPool,
+      userPoolClientName: `${appName}-${config.name}`,
+      generateSecret: false,
+      preventUserExistenceErrors: true,
+      authFlows: {
+        adminUserPassword: false,
+        custom: false,
+        userPassword: false,
+        userSrp: false,
+      },
+      supportedIdentityProviders: [cognito.UserPoolClientIdentityProvider.GOOGLE],
+      oAuth: {
+        flows: {
+          authorizationCodeGrant: true,
+          implicitCodeGrant: false,
+          clientCredentials: false,
+        },
+        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
+        callbackUrls,
+        logoutUrls,
+      },
+      accessTokenValidity: cdk.Duration.hours(1),
+      idTokenValidity: cdk.Duration.hours(1),
+      refreshTokenValidity: cdk.Duration.days(30),
+    });
 
     const siteBucket = new s3.Bucket(this, 'SiteBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -71,12 +125,29 @@ export class StaticSiteStack extends cdk.Stack {
       minTtl: cdk.Duration.seconds(0),
     });
 
+    const contentSecurityPolicy = [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "font-src 'self' data:",
+      "img-src 'self' data: https://*.googleusercontent.com",
+      `connect-src 'self' https://${authDomain} https://cognito-idp.${this.region}.amazonaws.com`,
+      `form-action 'self' https://${authDomain} https://accounts.google.com`,
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "object-src 'none'",
+    ].join('; ');
+
     const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(
       this,
       'SecurityHeadersPolicy',
       {
         responseHeadersPolicyName: `${config.stackName}-security-headers`,
         securityHeadersBehavior: {
+          contentSecurityPolicy: {
+            contentSecurityPolicy,
+            override: true,
+          },
           contentTypeOptions: { override: true },
           frameOptions: {
             frameOption: cloudfront.HeadersFrameOption.DENY,
@@ -213,6 +284,10 @@ export class StaticSiteStack extends cdk.Stack {
       value: distribution.distributionDomainName,
     });
     new cdk.CfnOutput(this, 'SiteUrl', { value: `https://${hostname}` });
+    new cdk.CfnOutput(this, 'AuthClientId', {
+      value: authClient.userPoolClientId,
+      description: 'Cognito app client ID for Google sign-in',
+    });
 
     applyTags(this, config.name);
 

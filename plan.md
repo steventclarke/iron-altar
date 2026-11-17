@@ -301,42 +301,48 @@ Notes:
 - [ ] Create GitHub labels and the GitHub App installation.
 - [ ] Deploy preview, verify end-to-end, then roll out production.
 
-### Phase 9: Google SSO Sign-In — Blocked on platform Phase 10
+### Phase 9: Google SSO Sign-In — Implemented (preview verification pending)
 
-Platform contract: `../stevenclarke-infrastructure/docs/google-sso-for-tenant-apps.md`
-(status there is target design, not yet deployed). Do not start app-side work until the
-platform `AuthStack`/`OidcStack` is live and the `/platform/auth/*` SSM parameters exist.
+Platform contract: `../stevenclarke-infrastructure/docs/google-sso-for-tenant-apps.md`.
+The platform `AuthStack`/`OidcStack` is deployed and `/platform/auth/*` resolves in
+`us-east-2`; the preview app client and CSP are live. Sign-in remains optional: "continue
+without signing in" is available on the login, callback, and logout screens, and no route or
+feature requires a session.
 
-- [ ] Confirm the platform Cognito Hosted UI domain, shared pool, Google IdP, and
-      `/platform/auth/*` SSM parameters are deployed in `us-east-2`; confirm the app deploy
-      roles carry the scoped `cognito-idp` client-management permissions (request changes in
-      the platform repo rather than broadening roles).
-- [ ] Add env config for the auth SSM paths, callback/logout URLs, and app-owned client-ID
-      parameter; keep AWS account IDs, pool IDs, and Google credentials out of the repo.
-- [ ] Create a public `UserPoolClient` per environment in the app CDK stacks: imported shared
+- [x] Confirmed the platform Hosted UI domain, shared pool, Google IdP, `/platform/auth/*`
+      params, and the app deploy roles' scoped `cognito-idp` client permissions.
+- [x] Added auth SSM paths to `infra/config/environments.ts`; no pool IDs, account IDs, or
+      Google credentials are committed.
+- [x] Created a public `UserPoolClient` per environment in the site stack: imported shared
       pool, auth-code + PKCE only, `openid email profile`, no client secret, 1 h ID/access
-      tokens, 30 d refresh token, exact callback/logout URLs.
-- [ ] Register redirect URIs: web prod/preview `/auth/callback`, `http://localhost:8081/...`
-      for local dev, and the native `ironaltar://auth/callback` scheme (Cognito accepts
-      custom schemes; `exp://` is unstable, so native SSO requires a development build).
-- [ ] Publish the client ID to an app-scoped SSM parameter and CloudFormation output; extend
-      the deploy workflows to write `auth-config.json` (domain, issuer, client ID) into the
-      web export before syncing to S3.
-- [ ] Add `expo-auth-session`, `expo-crypto`, and `expo-secure-store`; implement the auth
-      module with PKCE + state, code exchange, claim validation, session restore, and a
-      Zustand session store.
-- [ ] Add `/login`, `/auth/callback`, and `/logout` routes plus a "Sign in with Google" entry
-      on Profile; return to the originating route after callback and no-op locally on cancel.
-- [ ] Session handling: SecureStore on native; on web keep tokens in memory and rely on the
-      Cognito Hosted UI session for renewal. Never persist refresh tokens in `localStorage`.
-- [ ] Extend the CloudFront response headers policy with CSP `connect-src`, `form-action`,
-      and `img-src` entries for the auth domain and `*.googleusercontent.com`.
-- [ ] Keep sign-in optional: no feature gating, no sync, and local-first data flow unchanged;
-      the `SyncAdapter` stays a no-op.
-- [ ] Add tests: PKCE/state generation, claim validation, session store, CDK assertions
-      (public client, PKCE, callbacks, no secret, CSP), and the platform SSO checklist.
-- [ ] Add `docs/google-sso.md` with app-specific values, redirect matrix, and troubleshooting.
-- [ ] Deploy preview and verify sign-in/out on web and a development build, then production.
+      tokens, 30 d refresh token.
+- [x] Registered web prod/preview callbacks, `localhost`/`127.0.0.1:8081` for local dev, and
+      native `ironaltar://auth/callback` (Cognito accepts custom schemes; `exp://` is
+      unstable, so native SSO requires a development build).
+- [x] Published the client ID as the site stack's `AuthClientId` output; deploy workflows
+      write `auth-config.json` (domain, issuer, JWKS, client ID, logout URI) before S3 sync.
+      SSM publishing is deferred because app deploy roles only have `ssm:GetParameter`.
+- [x] Added `expo-auth-session`, `expo-crypto`, `expo-secure-store`, and `jose`; implemented
+      PKCE + state, code exchange, claim validation, web signature verification, session
+      restore/refresh, and a Zustand auth store in `src/auth/` and `src/state/auth-store.ts`.
+- [x] Added `/login`, `/auth/callback`, and `/logout` routes plus an Account panel on
+      Profile; cancel/errors fall back to the app and "Continue without signing in" is
+      always present.
+- [x] Web keeps tokens in memory and relies on the shared Cognito session for re-auth;
+      native uses SecureStore and refreshes before expiry; refresh tokens never touch
+      `localStorage`.
+- [x] Extended the CloudFront response headers policy with CSP `connect-src`,
+      `form-action`, and `img-src` entries for Hosted UI, JWKS, and Google avatars.
+- [x] Kept sign-in identity-only: no feature gating, no sync, local-first data flow
+      unchanged, and the `SyncAdapter` remains a no-op.
+- [x] Added CDK assertions for the public client, PKCE flow, callback URLs, and CSP.
+      Client-side unit-test coverage remains a follow-up (the app has no Jest harness yet).
+- [x] Added `docs/google-sso.md` with app-specific values, redirect matrix, local setup,
+      session behavior, CSP, and troubleshooting; linked it from the README.
+- [x] Deployed the preview stack: client `iron-altar-preview` created, CSP live, and the
+      authorize request redirects to Google's consent screen.
+- [ ] Complete interactive sign-in/out verification on preview web and a development build,
+      then deploy production.
 
 ## 6. Feature Refinements (triaged)
 
@@ -406,8 +412,9 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
   published `@issue-reporter/client` library that tenant apps configure, public GitHub
   issues via a GitHub App, diagnostics redaction, rate limits, and a public-report
   acknowledgement.
-- **P9 Google SSO (blocked):** optional Google sign-in through the platform's shared Cognito
-  pool and per-app client; identity only, no gating or sync. See sections 5 and 8.
+- **P9 Google SSO (implemented, preview verification pending):** optional Google sign-in
+  through the platform's shared Cognito pool and per-app client; identity only, no gating
+  or sync, with a "continue without signing in" path. See sections 5 and 8.
 
 ## 7. Hosting & Release Infrastructure (P7.1/P7.2)
 
@@ -686,20 +693,25 @@ Integration contract: `../stevenclarke-infrastructure/docs/google-sso-for-tenant
 The platform owns the shared Cognito user pool, Google IdP, Hosted UI domain,
 `/platform/auth/*` SSM parameters, and the scoped deploy-role permissions. Iron Altar owns
 one public app client per environment, the sign-in/callback/logout routes, session handling,
-claim validation, and the CSP. Do not create a second user pool or a Google OAuth client.
+claim validation, and the CSP. No second user pool or Google OAuth client exists.
+
+Implemented in `infra/lib/static-site-stack.ts`, `src/auth/`, `src/state/auth-store.ts`,
+`src/app/{login,auth/callback,logout}.tsx`, `src/ui/account-panel.tsx`, and the deploy
+workflows. Setup and troubleshooting live in `docs/google-sso.md`.
 
 ### Platform values consumed (not hardcoded)
 
-| SSM parameter                    | Use                                                          |
-| -------------------------------- | ------------------------------------------------------------ |
-| `/platform/auth/region`          | Cognito region (Cognito endpoint host)                       |
-| `/platform/auth/domain`          | Hosted UI base URL (browser + `expo-auth-session` discovery) |
-| `/platform/auth/user-pool-id`    | Pool to import for the app client                            |
-| `/platform/auth/issuer`          | Expected `iss` claim                                         |
-| `/platform/auth/google-idp-name` | `identity_provider` on `/oauth2/authorize`                   |
+| SSM parameter                  | Use                                                    |
+| ------------------------------ | ------------------------------------------------------ |
+| `/platform/auth/user-pool-id`  | Imported to create the app's `UserPoolClient`          |
+| `/platform/auth/user-pool-arn` | Referenced by the platform's scoped deploy-role policy |
+| `/platform/auth/domain`        | Hosted UI authorize/token/logout endpoints and CSP     |
+| `/platform/auth/issuer`        | ID token `iss` validation and runtime config           |
+| `/platform/auth/jwks-uri`      | Web RS256 signature verification and CSP `connect-src` |
 
-The app publishes `/apps/iron-altar/<environment>/auth-client-id`; extend
-`infra/config/environments.ts` with these paths and callback/logout URLs.
+The app does not write a client-ID SSM parameter: app deploy roles only have
+`ssm:GetParameter`. The client ID is the site stack's `AuthClientId` output, which the
+workflow reads from `cdk-outputs.json`.
 
 ### Redirect matrix
 
@@ -707,63 +719,62 @@ The app publishes `/apps/iron-altar/<environment>/auth-client-id`; extend
 | ------- | ------------------- | ------------------------------------------------------------------------ |
 | Web     | prod                | `https://iron-altar.stevenclarke.dev/auth/callback`                      |
 | Web     | preview             | `https://iron-altar-preview.stevenclarke.dev/auth/callback`              |
-| Web     | local dev           | `http://localhost:8081/auth/callback`                                    |
+| Web     | local dev           | `http://localhost:8081/auth/callback` (+ `127.0.0.1`)                    |
 | Native  | dev build / release | `ironaltar://auth/callback`                                              |
 | Expo Go | —                   | unsupported: `exp://` host/port is unstable and cannot be pre-registered |
 
-Register prod URLs only on the prod client. Register preview, localhost, and the native
-scheme on the preview client; register the native scheme on prod only when a production
-development/release build needs it. Cognito supports custom URI schemes and loopback HTTP
-for local development.
+Prod carries the prod web URL and native scheme. Preview additionally carries localhost and
+loopback URLs. Cognito supports custom URI schemes and loopback HTTP for local development.
 
 ### Config delivery
 
-- Deploy workflow reads `/platform/auth/*` and the stack's client-ID output, writes
-  `dist/auth-config.json`, then syncs the export to S3. No rebuild is needed when the
-  platform rotates its domain; no secrets are involved.
-- Local dev reads the same shape from `EXPO_PUBLIC_*` env vars (preview client).
-- Native selects preview vs prod config by build profile; never bundle the pool ID or
-  Google credentials.
+- Deploy workflows read `/platform/auth/*` and the stack's `AuthClientId`/`SiteUrl`
+  outputs, write `dist/auth-config.json`, then sync it to S3 with no-cache metadata. No
+  rebuild is needed when the platform rotates its domain; no secrets are involved.
+- Local dev uses the preview client via `EXPO_PUBLIC_AUTH_*` env vars (`.env.example`).
+- Native builds receive the same values through `EXPO_PUBLIC_AUTH_*` at build time; there
+  is no runtime config fetch on native.
 
 ### Session and token strategy
 
-| Surface | Storage                                                                     | Renewal                                                                                               |
-| ------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Web     | ID/access tokens in memory only                                             | Silent re-auth (`prompt=none`) against the shared Cognito session; no refresh token in `localStorage` |
-| Native  | Refresh token + ID/access in SecureStore                                    | Restore on launch; refresh before expiry; clear all on sign-out                                       |
-| Both    | Clear app session and call Hosted UI `/logout?client_id=...&logout_uri=...` | Sign-out must end both the app session and the shared Cognito session                                 |
+| Surface | Storage                                     | Renewal                                                                                                                 |
+| ------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Web     | ID/access tokens in memory only             | Manual sign-in reuses the shared Cognito session, so Google usually does not prompt; no refresh token in `localStorage` |
+| Native  | Refresh token + ID/access in SecureStore    | Refresh before expiry; restore on launch; clear all on sign-out                                                         |
+| Both    | Clear local session, then Cognito `/logout` | `logout_uri` ends the shared Cognito session; "continue without signing in" stays available                             |
 
-Validate `iss`, `aud` (client ID), `exp`, `token_use`, and `email_verified` on every restore.
-Verify the JWT signature via JWKS only where WebCrypto exists; on native, claim validation is
-the P9 baseline (see open decisions). Sign-in is optional and identity-only: no gating, no
-sync, local-first data flow unchanged.
+Validate `iss`, `aud` (client ID), `exp`, `token_use`, and `email_verified`. Web verifies
+the RS256 signature against JWKS with `jose`; native validates claims only because Hermes
+lacks WebCrypto. Sign-in is optional and identity-only: no gating, no sync, local-first data
+flow unchanged.
 
-### CSP additions
+### CSP
 
-Add to the CloudFront response headers policy (synth-time domain from SSM):
+The CloudFront response headers policy now sends:
 
 ```
-connect-src 'self' https://<auth-domain>;
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+font-src 'self' data:; img-src 'self' data: https://*.googleusercontent.com;
+connect-src 'self' https://<auth-domain> https://cognito-idp.<region>.amazonaws.com;
 form-action 'self' https://<auth-domain> https://accounts.google.com;
-img-src 'self' data: https://*.googleusercontent.com;
+frame-ancestors 'none'; base-uri 'self'; object-src 'none'
 ```
 
-Keep the policy values narrow; assert them in CDK tests instead of relying on manual checks.
+The auth domain is resolved from SSM at synth time and asserted in CDK tests. Token
+exchange CORS was verified against the deployed Hosted UI domain.
 
 ### Verification
 
-- Platform checklist: prod and preview sign-in complete on the exact registered URIs;
-  long-lived Cognito session reuses SSO; state mismatch and missing PKCE are rejected; wrong
-  issuer/audience is rejected; sign-out clears both sessions; no tokens in URLs, logs, or
-  `localStorage`.
-- App checklist: deep link on web and a development build; cancel returns to Profile; silent
-  refresh on web reload; native relaunch restores session; CSP does not block token/avatar
-  requests; preview then prod.
+- Platform checklist: sign-in from prod and preview completes on the exact registered URIs;
+  the shared Cognito session reuses SSO; state mismatch and missing PKCE are rejected; wrong
+  issuer/audience is rejected; sign-out clears the app and Cognito sessions; no tokens in
+  URLs, logs, or `localStorage`.
+- App checklist: web callback returns to Profile; cancel/error keeps "continue without
+  signing in" available; native deep link works in a development build; relaunch restores
+  the session; CSP does not block token/JWKS/avatar requests; preview then prod.
 
 ### Open decisions
 
-1. Web session durability: in-memory + silent re-auth (P9 default) vs. a small BFF for
+1. Web session durability: in-memory + shared Cognito re-auth (P9) vs. a small BFF for
    HttpOnly refresh cookies. A BFF is out of scope until sync exists.
-2. Native signature verification: claim-only (P9 baseline) vs. adding `jose` + a WebCrypto
-   polyfill.
-3. Whether preview sign-ins should tag app state so test accounts are distinguishable.
+2. Native signature verification: claim-only (P9) vs. adding a WebCrypto polyfill.

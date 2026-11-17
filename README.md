@@ -15,6 +15,7 @@ app, and supports two deployments: `preview` and `prod`.
 
 - [spec.md](./spec.md) - Original brief
 - [plan.md](./plan.md) - Build plan, phases, decisions, and status
+- [docs/google-sso.md](./docs/google-sso.md) - Optional Google sign-in setup and behavior
 - `src/` - Expo Router screens, domain logic, data layer, state, and UI
 - `assets/` - Fonts, sprites, and app icons
 - `infra/` - Application CDK app (S3, CloudFront, DNS records, mobile release bucket)
@@ -72,6 +73,9 @@ SDK-compatible version. Expo Go only includes its bundled native modules; after 
 library with native code, use a development build (`npx expo run:ios|android` or
 `eas build --profile development`).
 
+Google sign-in is optional and never required to use the app. Local setup, redirect URLs,
+and session behavior are documented in [docs/google-sso.md](./docs/google-sso.md).
+
 ## Application infrastructure (CDK)
 
 Application infrastructure lives in `infra/` and reads shared values from SSM (domain
@@ -82,7 +86,8 @@ hardcoding them. The app uses the platform's existing CDK bootstrap and never ru
 Stacks:
 
 - `iron-altar-preview-site` / `iron-altar-prod-site` — private S3 origin behind CloudFront
-  (OAC), cache and security headers, SPA fallback, and Route 53 A/AAAA alias records.
+  (OAC), cache and security headers (including CSP), the Google sign-in Cognito app client,
+  SPA fallback, and Route 53 A/AAAA alias records.
 - `iron-altar-prod-release` — private, versioned, encrypted bucket for signed mobile
   artifacts.
 
