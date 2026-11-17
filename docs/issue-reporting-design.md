@@ -4,7 +4,8 @@
 
 **Repositories:**
 
-- `steventclarke/iron-altar` — tenant client, report UI, screenshot capture, diagnostics.
+- `steventclarke/iron-altar` — tenant client, report UI, screenshot capture, full app-data
+  snapshot, logs, stack traces, and diagnostics.
 - `stevenclarke-infrastructure` — shared issue-intake backend, GitHub App integration,
   CloudFront endpoint, storage, queues, and alarms.
 
@@ -31,13 +32,16 @@ The report contains:
 
 - user-written text (summary, description, expected behavior, optional contact);
 - an optional screenshot of the screen at the time the report was opened;
-- structured diagnostics (counts, settings, versions, route — no profile name, notes, or
-  body-weight values);
+- runtime diagnostics (versions, platform, screen, route, execution environment);
+- a full local app-data snapshot (profile, sessions, sets, body weights, exercises, draft,
+  settings);
+- recent application logs and stack traces;
 - report metadata (app, environment, report ID, installation ID).
 
-All user text, diagnostics, and screenshot content become **public** when the GitHub issue
-is created. The client therefore requires an explicit public-report acknowledgement before
-submission.
+Only tokens and secrets are excluded. Profile name, workout notes, body-weight values, set
+details, and other app data are included. All report content becomes **public** when the
+GitHub issue is created, so the client requires an explicit public-report acknowledgement
+before submission.
 
 ---
 
@@ -47,6 +51,8 @@ submission.
 
 - Let a user report a bug or request from inside the app without leaving the app.
 - Include enough context for a developer or coding agent to reproduce and triage the issue.
+- Include the full local app-data snapshot, recent logs, and stack traces; exclude only
+  tokens and secrets.
 - Support screenshot capture on native and web without requiring a development build.
 - Treat web as the primary near-term reporting target; web captures the visible viewport
   only.
@@ -58,14 +64,17 @@ submission.
 ### Non-goals for v1
 
 - Two-way conversation between the reporter and the developer.
-- Attaching arbitrary files other than the current screen capture.
-- Automatic log or stack-trace collection.
+- Attaching arbitrary files other than the current screen capture and sanitized report
+  data.
 - Offline submission queue.
 - Automatic duplicate detection beyond the client-generated idempotency key.
 - Authenticated user accounts or reporter identity.
 - Private issues or private attachments.
 - WAF, API Gateway, or per-app backend stacks.
 - Automatic screenshot redaction.
+- Guaranteed detection of arbitrary secrets pasted into free-form user text. The app holds
+  no credentials, so app-generated logs and stack traces are secret-free by construction;
+  pattern-based redaction is defense in depth for user-supplied content.
 
 ---
 
@@ -99,16 +108,18 @@ Fields:
 | What did you expect? | No       | Up to 2000 characters                    |
 | Contact              | No       | Up to 200 characters; public if supplied |
 | Screenshot           | No       | Preview and remove before submitting     |
-| Diagnostics          | Toggle   | Default on; preview shows exact JSON     |
+| Data and diagnostics | Toggle   | Default on; preview shows exact JSON     |
 
 The form includes a prominent notice:
 
-> Reports create a public GitHub issue. Do not include personal information. Screenshots
-> may contain your profile name, workout history, or body-weight data.
+> Reports create a public GitHub issue. Do not include secrets. Reports include your
+> profile name, workout history, body-weight data, recent logs, and stack traces.
+> Screenshots may contain the same information.
 
 Submission is disabled until the user checks:
 
-> I understand this report and its screenshot will be public.
+> I understand this report, its app data, logs, stack traces, and screenshot will be
+> public.
 
 ### Submission states
 
@@ -116,7 +127,8 @@ Submission is disabled until the user checks:
 - **Success:** show the report ID and confirm the issue was queued.
 - **Validation error:** show field-level errors.
 - **Rate limited:** explain that too many reports were submitted recently.
-- **Too large:** explain that the screenshot is too large and offer to remove it.
+- **Too large:** explain which part is too large and offer to reduce screenshot quality or
+  remove the screenshot; do not silently drop app data, logs, or stack traces.
 - **Network/server error:** preserve the form and allow retry with the same report ID.
 
 The client does not automatically retry in v1. A manual retry reuses the same `reportId`,
@@ -128,19 +140,43 @@ so the backend does not create a duplicate issue.
 
 ### 4.1 User-provided data
 
-| Data               | Sent     | Public in issue | Notes                                         |
-| ------------------ | -------- | --------------- | --------------------------------------------- |
-| Category           | Yes      | Yes             | Maps to a `type:*` label                      |
-| Summary            | Yes      | Yes             | Issue title                                   |
-| Description        | Yes      | Yes             | “What happened?”                              |
-| Expected behavior  | Optional | Yes             | Omitted when blank                            |
-| Contact            | Optional | Yes             | Public if supplied                            |
-| Screenshot         | Optional | Yes             | Stored in S3 and linked; web is viewport-only |
-| Diagnostics toggle | Yes      | Indirect        | Controls whether diagnostics are included     |
+| Data                 | Sent     | Public in issue | Notes                                         |
+| -------------------- | -------- | --------------- | --------------------------------------------- |
+| Category             | Yes      | Yes             | Maps to a `type:*` label                      |
+| Summary              | Yes      | Yes             | Issue title                                   |
+| Description          | Yes      | Yes             | “What happened?”                              |
+| Expected behavior    | Optional | Yes             | Omitted when blank                            |
+| Contact              | Optional | Yes             | Public if supplied                            |
+| Screenshot           | Optional | Yes             | Stored in S3 and linked; web is viewport-only |
+| Data and diagnostics | Toggle   | Indirect        | Default on; controls automatic data below     |
 
-### 4.2 Automatic diagnostics
+### 4.2 Automatic data
+
+When the data-and-diagnostics toggle is on, the client includes the full local database,
+recent logs, recent stack traces, and runtime diagnostics. Only token- and secret-like
+values are redacted; no other app data is intentionally excluded.
 
 ```ts
+import type { DatabaseShape } from '@/data/db/schema';
+
+/** Exact persisted document from AsyncStorage: profile, settings, exercises,
+ * sessions, sets, bodyWeights, and draft. */
+type AppDataSnapshot = DatabaseShape;
+
+type LogEntry = {
+  timestamp: string;
+  level: 'log' | 'info' | 'warn' | 'error';
+  message: string;
+  context?: Record<string, unknown>;
+};
+
+type StackTraceEntry = {
+  timestamp: string;
+  message: string;
+  stack: string;
+  isFatal: boolean;
+};
+
 type Diagnostics = {
   appVersion: string;
   buildNumber: string | null;
@@ -171,18 +207,23 @@ type Diagnostics = {
 };
 ```
 
-Diagnostics deliberately exclude:
+Capture rules:
 
-- profile name;
-- workout notes;
-- body-weight values;
-- individual set weights or reps;
-- exercise history;
-- free-form session data;
-- logs, stack traces, tokens, or secrets.
+- **App data:** send the current `DatabaseShape` document exactly as persisted, including
+  profile name, workout notes, body-weight values, set weights/reps, exercise history, and
+  the active draft.
+- **Logs:** keep the most recent 500 entries or 256 KB, whichever is smaller, by wrapping
+  `console.log/info/warn/error` and capturing structured context.
+- **Stack traces:** keep the most recent 10 unhandled errors from native `ErrorUtils` and
+  web `window.onerror` / `unhandledrejection`.
+- **Runtime diagnostics:** include the summary above for quick triage; the app-data
+  snapshot remains the authoritative record.
+- **Redaction:** replace known token/secret patterns with `[REDACTED]` in logs, stack
+  traces, user text, and app-data strings before submission. If a log line cannot be
+  safely scanned, drop the whole line rather than send it.
 
-The diagnostics toggle allows the user to submit without diagnostics. The preview shows
-the exact JSON that will be sent.
+The data-and-diagnostics toggle allows the user to submit without automatic data. The
+preview shows the exact JSON that will be sent.
 
 ### 4.3 Backend metadata
 
@@ -194,9 +235,10 @@ Stored internally and/or included in the public issue:
 | `installationId`        | Yes, in hidden metadata | Pseudonymous stable install ID          |
 | App slug                | Yes                     | `iron-altar`                            |
 | Environment             | Yes                     | `prod`, `preview`, or `dev`             |
+| Sanitized report JSON   | Yes                     | S3 object linked from the issue         |
 | Report status           | Internal                | `queued`, `created`, `failed`           |
 | GitHub issue number/URL | Internal and issue      | Stored in DynamoDB                      |
-| Viewer IP               | No                      | Used only for rate limiting             |
+| Viewer IP               | No                      | Transport metadata; rate limiting only  |
 | Rate-limit counters     | No                      | Short TTL                               |
 | Honeypot value          | No                      | Not stored; submission silently dropped |
 
@@ -214,18 +256,44 @@ client must:
 
 - display the warning before the form;
 - require the acknowledgement checkbox;
-- show a diagnostics preview;
+- show a data-and-diagnostics preview;
 - allow the screenshot to be removed;
 - allow the user to omit contact details.
 
 ### Redaction boundary
 
-The client sends only the fields listed above. It must not send the entire local database
-or arbitrary logs. The backend validates the diagnostics shape and strips unknown keys.
+The client sends the full local database document, recent logs, recent stack traces, and
+runtime diagnostics. It excludes only tokens and secrets.
+
+The client holds no GitHub or AWS credentials. App-generated logs and stack traces are
+therefore secret-free by construction; redaction is defense in depth for user-pasted text
+and future code changes. Both the client and backend scan known token/secret patterns
+(GitHub tokens, AWS access keys, JWTs, bearer/Authorization values, private keys,
+passwords, API keys, and similar values) and replace matches with `[REDACTED]`. If a log
+line cannot be safely scanned, it is dropped rather than sent raw.
+
+The backend validates the request shape, strips unknown keys, and repeats redaction before
+storing the sanitized report JSON or creating the GitHub issue. The backend never logs raw
+report payloads, app data, logs, stack traces, contact details, screenshots, or secrets.
 
 Screenshots are not automatically redacted. A screenshot may show profile name, body
 weight, workout history, or other data. The warning covers this, and the user can remove
 the screenshot before submitting.
+
+Viewer IP is transport metadata rather than app data. It is used only for rate limiting and
+is not included in the public issue; see open question 10.
+
+### Secret-leak guarantee
+
+- The client holds no GitHub or AWS credentials and never sends credentials.
+- App-generated logs and stack traces cannot contain application secrets by construction.
+- Known token/secret formats are redacted client-side and re-scanned server-side before
+  storage or issue creation.
+- If a log line cannot be safely scanned, the line is dropped rather than sent raw.
+- The backend never logs raw report payloads.
+- Residual risk: a user pastes a secret in an unrecognized format into free-form text. The
+  public warning tells users not to include secrets, and pattern redaction catches common
+  formats.
 
 ### Abuse controls
 
@@ -233,7 +301,8 @@ the screenshot before submitting.
   storing or queueing anything.
 - **Origin check:** allow only known Iron Altar and local-development origins.
 - **Rate limits:** DynamoDB atomic counters with TTL.
-- **Payload limits:** JSON body size limit and screenshot size limit.
+- **Payload limits:** JSON body size limit, sanitized app-data/log/stack-trace size limit,
+  and screenshot size limit.
 - **Idempotency:** conditional write on `reportId` prevents duplicate issues from retries.
 - **Least privilege:** GitHub App has only `Issues: Read and write` and
   `Metadata: Read-only` on the target repository.
@@ -262,11 +331,13 @@ authentication.
 | File                            | Change                                                                  |
 | ------------------------------- | ----------------------------------------------------------------------- |
 | `src/app/report.tsx`            | New report form and submission flow                                     |
-| `src/app/_layout.tsx`           | Register the `report` stack screen                                      |
+| `src/app/_layout.tsx`           | Register the `report` screen; install log/error capture                 |
 | `src/ui/nav-bar.tsx`            | Add report button and screenshot capture trigger                        |
-| `src/lib/issue-report.ts`       | Diagnostics, installation ID, API client                                |
+| `src/lib/issue-report.ts`       | App data snapshot, diagnostics, logs, stack traces, API client          |
+| `src/lib/report-log-buffer.ts`  | Console and unhandled-error ring buffer                                 |
+| `src/lib/redact-secrets.ts`     | Client-side token/secret redaction                                      |
 | `src/lib/screenshot.ts`         | Screen capture helper                                                   |
-| `src/constants/issue-report.ts` | API URL, app slug, limits                                               |
+| `src/constants/issue-report.ts` | API URL, app slug, limits, redaction patterns                           |
 | `package.json`                  | Add `expo-file-system`, `react-native-view-shot`, and `html2canvas-pro` |
 
 ### 6.2 Dependencies
@@ -305,7 +376,7 @@ No development build or EAS build is required for screenshot capture.
 4. In `issue-report.ts`, read the file with the Expo FileSystem `File` class:
    `new File(uri).base64()`.
 5. Delete the temporary file after a successful submission.
-6. Reject files larger than the configured limit (target: 3 MB decoded).
+6. Reject files larger than the configured limit (target: 1.5 MB decoded; hard max 3 MB).
 
 **Web:**
 
@@ -316,12 +387,13 @@ No development build or EAS build is required for screenshot capture.
 3. Do not import or call `expo-file-system` on web. Send the returned base64 string
    directly.
 4. For the preview, use the base64 value as a `data:image/jpeg;base64,...` source.
-5. Reject captures larger than the configured limit (target: 3 MB decoded).
+5. Reject captures larger than the configured limit (target: 1.5 MB decoded; hard max 3 MB).
 
 `react-native-view-shot` on web is backed by `html2canvas-pro`. Basic views, text, and
 images capture well, but `react-native-svg` support is limited. Iron Altar’s chart screens
 may therefore produce imperfect screenshots on web. This is acceptable for v1; the form
-still submits diagnostics and text if the user removes the screenshot.
+still submits app data, diagnostics, logs, stack traces, and text if the user removes the
+screenshot.
 
 The screenshot is optional. Capture failure must not block the report form on either
 platform.
@@ -368,13 +440,50 @@ has already been accepted.
 
 `src/lib/issue-report.ts` exports:
 
+- `buildAppDataSnapshot(): AppDataSnapshot`;
 - `buildDiagnostics(): Diagnostics`;
+- `getRecentLogs(): LogEntry[]`;
+- `getRecentStackTraces(): StackTraceEntry[]`;
+- `redactReport(input): IssueReportRequest`;
 - `getInstallationId(): Promise<string>`;
 - `submitIssueReport(input): Promise<SubmitResult>`;
 - error mapping for validation, rate-limit, payload-too-large, and server errors.
 
 The client sends `Content-Type: application/json` and does not send credentials or app
 secrets.
+
+### 6.8 Log and stack-trace capture
+
+`src/lib/report-log-buffer.ts` installs capture once during app bootstrap in
+`src/app/_layout.tsx`, after the database is initialized:
+
+- wrap `console.log`, `console.info`, `console.warn`, and `console.error` while preserving
+  the original behavior;
+- keep the most recent 500 entries or 256 KB, whichever is smaller;
+- capture unhandled native errors with `ErrorUtils.setGlobalHandler` and web errors with
+  `window.addEventListener('error')` and `window.addEventListener('unhandledrejection')`;
+- keep the most recent 10 stack traces;
+- redact secret-like values at capture time and again immediately before submission;
+- do not capture component trees, full navigation state, network request bodies, or
+  arbitrary global objects.
+
+### 6.9 Secret redaction
+
+`src/lib/redact-secrets.ts` recursively walks report strings and replaces secret-like
+values with `[REDACTED]`. It covers at least:
+
+- GitHub tokens (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`);
+- AWS access key IDs (`AKIA`, `ASIA`) and secret-access-key assignments;
+- JWTs (`eyJ...`) and `Bearer` / `Authorization` values;
+- PEM private keys;
+- common API-key prefixes (`sk-`, `xoxb-`, `AIza`);
+- key/value pairs whose key matches `token`, `secret`, `password`, `passwd`,
+  `authorization`, `api[_-]?key`, `private[_-]?key`, or `access[_-]?key`.
+
+The app does not store GitHub or AWS credentials, so normal app logs are secret-free. This
+redaction is defense in depth for user-pasted text and future code changes. The backend
+repeats the scan before writing S3 or creating the issue; if a log line cannot be safely
+scanned, it is dropped instead of sent raw.
 
 ---
 
@@ -399,7 +508,10 @@ type IssueReportRequest = {
   description: string;
   expected?: string;
   contact?: string;
+  appData?: AppDataSnapshot | null;
   diagnostics?: Diagnostics | null;
+  logs?: LogEntry[] | null;
+  stackTraces?: StackTraceEntry[] | null;
   client: {
     version: string;
     build: string | null;
@@ -429,6 +541,61 @@ Example (screenshot truncated):
   "description": "I logged a set and the rest timer stayed at 0:00.",
   "expected": "The rest timer should start automatically.",
   "contact": "",
+  "appData": {
+    "version": 5,
+    "profile": {
+      "id": "profile-1",
+      "name": "Alex",
+      "characterId": "barbarian",
+      "unitPref": "kg",
+      "createdAt": "2026-01-04T18:20:00.000Z",
+      "xp": 4200,
+      "lastActivityDate": "2026-11-14"
+    },
+    "settings": { "restSeconds": 120 },
+    "exercises": [
+      {
+        "id": "exercise-1",
+        "name": "Back Squat",
+        "category": "barbell",
+        "isMainLift": true,
+        "mainLift": "squat",
+        "muscleGroup": "legs"
+      }
+    ],
+    "sessions": [
+      {
+        "id": "session-1",
+        "date": "2026-11-14",
+        "startedAt": "2026-11-14T17:05:00.000Z",
+        "endedAt": "2026-11-14T17:52:00.000Z",
+        "notes": "Felt strong",
+        "completed": true,
+        "totalVolumeKg": 5000,
+        "xpEarned": 120
+      }
+    ],
+    "sets": [
+      {
+        "id": "set-1",
+        "sessionId": "session-1",
+        "exerciseId": "exercise-1",
+        "weightKg": 100,
+        "reps": 5,
+        "isWarmup": false,
+        "notes": "RPE 8",
+        "order": 1
+      }
+    ],
+    "bodyWeights": [
+      {
+        "id": "body-weight-1",
+        "date": "2026-11-14T06:30:00.000Z",
+        "weightKg": 82.4
+      }
+    ],
+    "draft": null
+  },
   "diagnostics": {
     "appVersion": "1.0.0",
     "buildNumber": null,
@@ -450,6 +617,22 @@ Example (screenshot truncated):
     "executionEnvironment": "storeClient",
     "sessionId": "abc"
   },
+  "logs": [
+    {
+      "timestamp": "2026-11-14T17:52:03.120Z",
+      "level": "error",
+      "message": "Rest timer did not start",
+      "context": { "sessionId": "session-1", "restSeconds": 120 }
+    }
+  ],
+  "stackTraces": [
+    {
+      "timestamp": "2026-11-14T17:52:03.121Z",
+      "message": "TypeError: Cannot read properties of null",
+      "stack": "at startRestTimer (src/state/rest-timer-store.ts:42:11)",
+      "isFatal": false
+    }
+  ],
   "client": {
     "version": "1.0.0",
     "build": null,
@@ -468,15 +651,15 @@ Example (screenshot truncated):
 
 ### 7.3 Responses
 
-| Status | Meaning                      | Body                                                     |
-| ------ | ---------------------------- | -------------------------------------------------------- |
-| `202`  | Accepted and queued          | `{ "reportId": "...", "status": "queued" }`              |
-| `400`  | Validation error             | `{ "error": "validation_failed", "issues": [...] }`      |
-| `403`  | Origin not allowed           | `{ "error": "forbidden_origin" }`                        |
-| `405`  | Method not allowed           | `{ "error": "method_not_allowed" }`                      |
-| `413`  | Screenshot or body too large | `{ "error": "payload_too_large" }`                       |
-| `429`  | Rate limited                 | `{ "error": "rate_limited", "retryAfterSeconds": 3600 }` |
-| `500`  | Internal error               | `{ "error": "internal_error" }`                          |
+| Status | Meaning                      | Body                                                                    |
+| ------ | ---------------------------- | ----------------------------------------------------------------------- |
+| `202`  | Accepted or already accepted | `{ "reportId": "...", "status": "queued" \| "receiving" \| "created" }` |
+| `400`  | Validation error             | `{ "error": "validation_failed", "issues": [...] }`                     |
+| `403`  | Origin not allowed           | `{ "error": "forbidden_origin" }`                                       |
+| `405`  | Method not allowed           | `{ "error": "method_not_allowed" }`                                     |
+| `413`  | Report payload too large     | `{ "error": "payload_too_large" }`                                      |
+| `429`  | Rate limited                 | `{ "error": "rate_limited", "retryAfterSeconds": 3600 }`                |
+| `500`  | Internal error               | `{ "error": "internal_error" }`                                         |
 
 Honeypot submissions return `202` with a fake success and are not stored.
 
@@ -495,12 +678,21 @@ The Lambda Function URL and CloudFront must allow `POST`, `OPTIONS`, and the
 ### 7.5 Limits
 
 - Request body: 6 MB maximum (base64 overhead included).
-- Screenshot: 3 MB decoded maximum.
+- App data, logs, and stack traces: 3.5 MB maximum after redaction and JSON encoding.
+- Screenshot: target 1.5 MB decoded; hard maximum 3 MB decoded.
+- Logs: most recent 500 entries or 256 KB, whichever is smaller.
+- Stack traces: most recent 10 unhandled errors.
 - Summary: 3–120 characters.
 - Description: 10–5000 characters.
 - Expected: 2000 characters maximum.
 - Contact: 200 characters maximum.
 - Diagnostics: known fields only; unknown keys stripped.
+- App data: full `DatabaseShape` document; no fields omitted by the client.
+- Secret redaction: known token/secret patterns replaced before size calculation.
+
+The client compresses or resizes the screenshot first when a report is too large. It does
+not silently drop app data, logs, or stack traces; if the report still exceeds the limit,
+the form shows a validation error and asks the user to remove or reduce the screenshot.
 
 ---
 
@@ -518,8 +710,8 @@ CloudFront (issues.stevenclarke.dev)
       |  /attachments/*: S3 origin (OAC)
       v
 Ingest Lambda
-      |-- validate + rate limit
-      |-- upload screenshot to S3
+      |-- validate + redact secrets + rate limit
+      |-- upload sanitized report JSON + screenshot to S3
       |-- write DynamoDB report record
       |-- send SQS message
       v
@@ -568,7 +760,7 @@ Resources:
 | Resource            | Purpose                                 | Key settings                                                                                     |
 | ------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `ReportsTable`      | Report status, idempotency, rate limits | `pk`/`sk`, on-demand, TTL, AWS-managed encryption, `RETAIN`                                      |
-| `AttachmentsBucket` | Screenshots                             | Private, block all public access, SSE, enforce TLS, `RETAIN`, abort incomplete multipart uploads |
+| `AttachmentsBucket` | Screenshots + sanitized report JSON     | Private, block all public access, SSE, enforce TLS, `RETAIN`, abort incomplete multipart uploads |
 | `WorkerQueue`       | Async issue creation                    | Visibility 180s, retention 4 days, encryption                                                    |
 | `WorkerDlq`         | Failed jobs                             | Retention 14 days, `maxReceiveCount: 5`                                                          |
 | `IngestFunction`    | Validate/upload/enqueue                 | Node 22, ARM64, 512 MB, 10s timeout                                                              |
@@ -595,52 +787,66 @@ SSM outputs:
    - app exists and has issue intake enabled;
    - environment is valid;
    - text lengths;
-   - diagnostics shape (strip unknown keys);
+   - app data shape (`DatabaseShape`); unknown top-level keys stripped;
+   - diagnostics shape; unknown keys stripped;
+   - logs and stack-trace array shapes and limits;
    - screenshot content type and base64 size.
 5. If `website` is non-empty, return a generic `202` and stop.
-6. Check rate limits in DynamoDB:
+6. Check for an existing report record:
+   - `pk = REPORT#<reportId>`, `sk = META`;
+   - if present, return its current status without re-running rate limits or writing files.
+7. Check rate limits in DynamoDB:
    - installation;
    - viewer IP from `CloudFront-Viewer-Address`;
    - app.
-7. If over limit, return `429`.
-8. If screenshot is present:
-   - decode base64;
-   - enforce decoded size;
-   - upload to S3 at
-     `attachments/reports/<app>/<reportId>/screenshot.<jpg|png>`.
-9. Conditionally write the report record:
-   - `pk = REPORT#<reportId>`, `sk = META`;
-   - condition: `attribute_not_exists(pk)`.
-   - If the record already exists, return the existing status.
-10. Send an SQS message containing `reportId`, `app`, and `environment`.
-11. Update the record to `status = queued`.
-12. Return `202`.
+8. If over limit, return `429`.
+9. Redact token/secret patterns from user text, app data, logs, and stack traces.
+   If redaction fails unexpectedly, return `500` without storing the report.
+10. Serialize the sanitized report JSON (all fields except the screenshot base64) and
+    enforce the app-data/log/stack-trace size limit.
+11. Conditionally write the report record with `status = receiving`:
+    - condition: `attribute_not_exists(pk)`;
+    - if the conditional write loses a race, return the existing status.
+12. Upload the sanitized report JSON to
+    `attachments/reports/<app>/<reportId>/report.json`.
+13. If a screenshot is present:
+    - decode base64;
+    - enforce decoded size;
+    - upload to S3 at
+      `attachments/reports/<app>/<reportId>/screenshot.<jpg|png>`.
+14. Update the record to `status = queued`.
+15. Send an SQS message containing `reportId`, `app`, and `environment`.
+16. Return `202`.
 
-If SQS send fails after the record is written, delete the record so the client can retry.
+If an upload, record update, or SQS send fails, delete the report record and any uploaded
+objects so the client can retry with the same `reportId`.
 
 ### 8.5 Worker flow
 
 1. Receive one SQS message.
 2. Load the report record.
 3. If already `created`, acknowledge and stop.
-4. Read the GitHub App secret:
+4. Read the sanitized `report.json` from S3.
+5. Read the GitHub App secret:
    - `appId`;
    - `installationId`;
    - `privateKey` (normalize escaped `\n`).
-5. Create an Octokit client with `@octokit/auth-app`.
-6. Create the issue:
+6. Create an Octokit client with `@octokit/auth-app`.
+7. Build the issue body from `report.json`, including the full-data link, recent logs,
+   stack traces, and screenshot link.
+8. Create the issue:
    - repository from app config;
    - title from summary;
    - body from the issue template;
    - labels from app config + category + environment.
-7. If GitHub returns `422` for labels, retry without labels.
-8. Update the report record:
-   - `status = created`;
-   - `issueNumber`;
-   - `issueUrl`;
-   - `updatedAt`.
-9. On unrecoverable error, mark `status = failed`, record the error, and let SQS retry
-   until the DLQ threshold.
+9. If GitHub returns `422` for labels, retry without labels.
+10. Update the report record:
+    - `status = created`;
+    - `issueNumber`;
+    - `issueUrl`;
+    - `updatedAt`.
+11. On unrecoverable error, mark `status = failed`, record the error, and let SQS retry
+    until the DLQ threshold.
 
 ### 8.6 DynamoDB schema
 
@@ -651,9 +857,11 @@ pk: REPORT#<reportId>
 sk: META
 app: "iron-altar"
 environment: "prod" | "preview" | "dev"
-status: "queued" | "created" | "failed"
+status: "receiving" | "queued" | "created" | "failed"
 installationId: string
 category: string
+reportKey: string
+screenshotKey?: string
 createdAt: ISO-8601
 updatedAt: ISO-8601
 issueNumber?: number
@@ -683,18 +891,23 @@ windows automatically.
 ### 8.7 S3 layout
 
 ```text
+attachments/reports/<app>/<reportId>/report.json
 attachments/reports/<app>/<reportId>/screenshot.jpg
 attachments/reports/<app>/<reportId>/screenshot.png
 ```
 
-The bucket is private. CloudFront serves attachments through OAC. The issue body uses:
+`report.json` is the sanitized full report (all request fields except the screenshot
+base64). The bucket is private. CloudFront serves attachments through OAC. The issue body
+uses:
 
 ```markdown
+[Full report data](https://issues.stevenclarke.dev/attachments/reports/iron-altar/<reportId>/report.json)
+
 ![Screenshot](https://issues.stevenclarke.dev/attachments/reports/iron-altar/<reportId>/screenshot.jpg)
 ```
 
-Retention: no automatic expiry in v1 so screenshots remain available for triage. A future
-lifecycle policy can expire attachments after the issue is closed.
+Retention: no automatic expiry in v1 so report data and screenshots remain available for
+triage. A future lifecycle policy can expire attachments after the issue is closed.
 
 ### 8.8 SQS and retries
 
@@ -769,7 +982,8 @@ placeholder after creating the app. The worker caches installation tokens in Lam
 - DLQ depth alarm.
 - All alarms publish to `/platform/monitoring/alerts-topic-arn`.
 - Lambda logs use structured JSON with `reportId`, `app`, and `status`; never log full
-  descriptions, contact details, screenshots, or the GitHub private key.
+  descriptions, app data, logs, stack traces, contact details, screenshots, or the GitHub
+  private key.
 
 ---
 
@@ -816,11 +1030,49 @@ is not lost.
 - Device: iPhone
 - Route: /session/abc
 
+## Full report data
+
+[report.json](https://issues.stevenclarke.dev/attachments/reports/iron-altar/<reportId>/report.json)
+
+## App data
+
+- Database version: 5
+- Profile: Alex
+- Sessions: 42
+- Sets: 318
+- Body weights: 12
+- Exercises: 15
+- Draft active: yes
+
+The complete `DatabaseShape` document is in `report.json`.
+
 ## Diagnostics
 
 ```json
 { ... }
 ```
+
+## Recent logs
+
+<details>
+<summary>Last 100 log entries</summary>
+
+```json
+[ ... ]
+```
+
+</details>
+
+## Stack traces
+
+<details>
+<summary>Last 10 unhandled errors</summary>
+
+```json
+[ ... ]
+```
+
+</details>
 
 ## Screenshot
 
@@ -836,8 +1088,10 @@ is not lost.
 <!-- issue-report:v1 {"reportId":"...","installationId":"...","app":"iron-altar","environment":"prod"} -->
 ````
 
-If diagnostics are disabled, the section says “Diagnostics disabled by reporter.” If no
-screenshot was attached, the screenshot section is omitted.
+If automatic data is disabled, the app-data, diagnostics, logs, and stack-trace sections
+say “Disabled by reporter.” If no screenshot was attached, the screenshot section is
+omitted. If the body would exceed GitHub’s 65,536-character limit, the worker truncates
+the inline logs and stack traces and relies on the `report.json` link for the full data.
 
 ---
 
@@ -913,7 +1167,7 @@ no recurring SaaS dependency.
 ### Private repository
 
 Considered, but the user chose the public `steventclarke/iron-altar` repository. The client
-therefore requires a public-report acknowledgement and redacts diagnostics.
+therefore requires a public-report acknowledgement and redacts only tokens and secrets.
 
 ### Screenshot via development build
 
@@ -932,23 +1186,34 @@ native code or a development build. The trade-off is limited SVG/chart fidelity 
 
 ### Client
 
+- Unit tests for app-data snapshot shape; assert every `DatabaseShape` field is included.
 - Unit tests for diagnostics shape and environment detection.
+- Unit tests for log-buffer limits and stack-trace capture.
+- Unit tests for secret redaction across text, app data, logs, and stack traces.
 - Unit tests for error mapping and installation ID persistence.
 - Manual tests in Expo Go on iOS/Android and in the web build.
 - Verify web screenshot capture returns base64 without importing `expo-file-system`.
 - Verify web captures only the visible viewport and still submits when capture fails.
-- Verify screenshot removal, diagnostics toggle, and public acknowledgement gating.
+- Verify screenshot removal, automatic-data toggle, and public acknowledgement gating.
+- Verify the preview shows the exact app data, logs, stack traces, and diagnostics JSON.
+- Verify oversized reports show an error and do not silently drop data.
 - Verify retry reuses the same report ID.
 
 ### Backend
 
-- Zod validation tests for each field and boundary.
+- Zod validation tests for each field and boundary, including `DatabaseShape`, logs, and
+  stack traces.
+- Secret-redaction tests for user text, app data, logs, and stack traces.
 - Rate-limit tests with DynamoDB local or mocked client.
-- Idempotency test: same `reportId` returns the existing report.
+- Idempotency test: same `reportId` returns the existing report and does not rewrite S3
+  objects.
 - Honeypot test: no DynamoDB/S3/SQS writes.
 - Screenshot size and content-type tests.
+- Report JSON upload, content, and size tests.
 - Worker tests with mocked Octokit:
   - successful issue creation;
+  - issue body links `report.json` and includes logs/stack traces;
+  - issue body truncates inline sections over GitHub’s limit;
   - label fallback on `422`;
   - already-created report is skipped.
 - CDK assertions for:
@@ -965,10 +1230,12 @@ native code or a development build. The trade-off is limited SVG/chart fidelity 
 
 1. Deploy preview stack.
 2. Submit a report from the preview app.
-3. Confirm S3 screenshot, DynamoDB record, SQS processing, and GitHub issue.
-4. Submit the same `reportId` again and confirm no duplicate issue.
-5. Exceed a rate limit and confirm `429`.
-6. Trigger a worker failure and confirm DLQ alarm.
+3. Confirm S3 `report.json` and screenshot, DynamoDB record, SQS processing, and GitHub
+   issue.
+4. Confirm the issue links the full report data and includes recent logs and stack traces.
+5. Submit the same `reportId` again and confirm no duplicate issue or S3 rewrite.
+6. Exceed a rate limit and confirm `429`.
+7. Trigger a worker failure and confirm DLQ alarm.
 
 ---
 
@@ -980,8 +1247,8 @@ native code or a development build. The trade-off is limited SVG/chart fidelity 
 3. **GitHub setup:** create the GitHub App, install it on `steventclarke/iron-altar`,
    populate the secret, and create labels.
 4. **Deploy preview:** deploy the platform stack to preview and verify the endpoint.
-5. **Client implementation:** add the report button, form, diagnostics, screenshot capture,
-   and public warning.
+5. **Client implementation:** add the report button, form, full app-data snapshot, log and
+   stack-trace capture, secret redaction, screenshot capture, and public warning.
 6. **Preview verification:** submit real reports from the preview app and confirm issues.
 7. **Production rollout:** deploy the backend to prod, ship the client, and monitor alarms.
 
@@ -991,11 +1258,11 @@ No production deploy should happen before the GitHub App secret is configured.
 
 ## 15. Open questions
 
-1. **Diagnostics default:** should diagnostics default on or off? Recommendation: on, with
-   preview and toggle.
+1. **Automatic-data default:** should app data, logs, stack traces, and diagnostics default
+   on or off? Recommendation: on, with preview and toggle.
 2. **Rate limits:** confirm the initial 5/10/20 per-hour values after observing real usage.
-3. **Attachment retention:** keep screenshots indefinitely, or expire after the issue is
-   closed / after 12 months?
+3. **Report retention:** keep `report.json` and screenshots indefinitely, or expire after
+   the issue is closed / after 12 months?
 4. **Contact field:** keep it optional and public, or remove it in favor of GitHub
    comments?
 5. **Issue title format:** confirm `[iron-altar] <summary>` or use a category prefix.
@@ -1006,7 +1273,10 @@ No production deploy should happen before the GitHub App secret is configured.
    same public repository, or be disabled outside production?
 9. **Screenshot redaction:** is manual removal sufficient for v1, or is a crop/redaction
    tool required before public submission?
-10. **Web SVG fidelity:** accept imperfect `react-native-svg` chart captures on web, or
+10. **Viewer IP:** keep it internal for rate limiting, or include it in the public report to
+    satisfy “only secrets are excluded”? Current design keeps it internal because it is
+    transport metadata and more identifying than the username.
+11. **Web SVG fidelity:** accept imperfect `react-native-svg` chart captures on web, or
     disable screenshots on chart routes until fidelity improves?
 
 ---
@@ -1017,6 +1287,8 @@ No production deploy should happen before the GitHub App secret is configured.
 
 - [ ] Add `issueIntake` to `config/applications.ts`.
 - [ ] Add `lambda/issue-intake/` handlers and helpers.
+- [ ] Add secret redaction and report JSON upload.
+- [ ] Add issue-body rendering with logs, stack traces, and full-data link.
 - [ ] Add `lib/issue-intake-stack.ts`.
 - [ ] Wire the stack in `bin/app.ts`.
 - [ ] Add CDK assertions and `cdk-nag` suppressions.
@@ -1028,14 +1300,17 @@ No production deploy should happen before the GitHub App secret is configured.
 
 - [ ] Install `expo-file-system`, `react-native-view-shot`, and `html2canvas-pro`.
 - [ ] Add `src/lib/screenshot.ts` with native `tmpfile` and web `base64` paths.
-- [ ] Add `src/lib/issue-report.ts`.
+- [ ] Add `src/lib/report-log-buffer.ts` for console and unhandled-error capture.
+- [ ] Add `src/lib/redact-secrets.ts` for client-side token/secret redaction.
+- [ ] Add `src/lib/issue-report.ts` for app data, diagnostics, logs, stack traces, and API.
 - [ ] Add `src/constants/issue-report.ts`.
 - [ ] Add `src/app/report.tsx`.
 - [ ] Add the report button to `src/ui/nav-bar.tsx`.
-- [ ] Register the `report` route in `src/app/_layout.tsx`.
+- [ ] Register the `report` route and install log capture in `src/app/_layout.tsx`.
 - [ ] Add tests and run format/lint/typecheck/build.
 - [ ] Verify web capture (visible viewport only) and native capture in Expo Go, preview,
       and production.
+- [ ] Verify app data, logs, stack traces, and redaction in the preview.
 
 ### GitHub
 

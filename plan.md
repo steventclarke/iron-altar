@@ -283,8 +283,8 @@ Notes:
       `IssueIntakeStack` design in `docs/issue-reporting-design.md`.
 - [ ] Implement the platform intake stack and GitHub App integration in
       `stevenclarke-infrastructure`.
-- [ ] Add the report button, screenshot capture, diagnostics, and public-report
-      acknowledgement to the client.
+- [ ] Add the report button, screenshot capture, full app-data snapshot, logs, stack
+      traces, secret redaction, and public-report acknowledgement to the client.
 - [ ] Create GitHub labels and the GitHub App installation.
 - [ ] Deploy preview, verify end-to-end, then roll out production.
 
