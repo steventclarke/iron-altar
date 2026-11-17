@@ -12,6 +12,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Palette } from '@/constants/theme';
 import { initializeDatabase } from '@/data/db/database';
 import { seedDatabase } from '@/data/seed/seed';
+import { useAuthStore } from '@/state/auth-store';
 import { useProfileStore } from '@/state/profile-store';
 import { useRestTimer } from '@/state/rest-timer-store';
 import { useSessionStore } from '@/state/session-store';
@@ -30,6 +31,7 @@ export default function RootLayout() {
       useProfileStore.getState().hydrate();
       useSessionStore.getState().hydrate();
       useRestTimer.getState().hydrate();
+      void useAuthStore.getState().hydrate();
       if (!cancelled) setDbReady(true);
     })();
     return () => {
@@ -60,6 +62,9 @@ export default function RootLayout() {
         <Stack.Screen name="history/[id]" />
         <Stack.Screen name="progress/[lift]" />
         <Stack.Screen name="progress/body-weight" />
+        <Stack.Screen name="login" />
+        <Stack.Screen name="auth/callback" />
+        <Stack.Screen name="logout" />
       </Stack>
     </SafeAreaProvider>
   );

@@ -115,6 +115,48 @@ describe('StaticSiteStack', () => {
     });
   });
 
+  test('creates a public PKCE client for Google sign-in', () => {
+    const template = siteTemplate('preview');
+
+    template.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+      GenerateSecret: false,
+      AllowedOAuthFlowsUserPoolClient: true,
+      AllowedOAuthFlows: ['code'],
+      AllowedOAuthScopes: Match.arrayWith(['openid', 'email', 'profile']),
+      SupportedIdentityProviders: ['Google'],
+      CallbackURLs: Match.arrayWith(['ironaltar://auth/callback']),
+      LogoutURLs: Match.arrayWith(['http://localhost:8081/']),
+      AccessTokenValidity: 60,
+      IdTokenValidity: 60,
+      RefreshTokenValidity: 43200,
+    });
+    template.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+      CallbackURLs: Match.arrayWith(['http://localhost:8081/auth/callback']),
+    });
+    const clients = JSON.stringify(template.findResources('AWS::Cognito::UserPoolClient'));
+    expect(clients).toContain('https://iron-altar-preview.');
+    expect(clients).toContain('/auth/callback');
+
+    const prodClients = JSON.stringify(
+      siteTemplate('prod').findResources('AWS::Cognito::UserPoolClient'),
+    );
+    expect(prodClients).toContain('https://iron-altar.');
+    expect(prodClients).not.toContain('localhost');
+    template.hasOutput('AuthClientId', {});
+  });
+
+  test('sets a CSP that allows the auth domain and Google avatars', () => {
+    const template = siteTemplate('preview');
+
+    const policies = JSON.stringify(
+      template.findResources('AWS::CloudFront::ResponseHeadersPolicy'),
+    );
+    expect(policies).toContain("default-src 'self'");
+    expect(policies).toContain('https://accounts.google.com');
+    expect(policies).toContain('https://*.googleusercontent.com');
+    expect(policies).toContain('form-action');
+  });
+
   test('marks preview responses noindex and leaves prod indexable', () => {
     const preview = siteTemplate('preview');
     preview.hasResourceProperties('AWS::CloudFront::ResponseHeadersPolicy', {

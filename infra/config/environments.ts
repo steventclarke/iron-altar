@@ -8,6 +8,10 @@ export const ssmPaths = {
   domainName: '/platform/dns/domain-name',
   hostedZoneId: '/platform/dns/hosted-zone-id',
   certificateArn: '/platform/certs/us-east-1/wildcard-arn',
+  authUserPoolId: '/platform/auth/user-pool-id',
+  authDomain: '/platform/auth/domain',
+  authIssuer: '/platform/auth/issuer',
+  authJwksUri: '/platform/auth/jwks-uri',
   previewDeployRoleArn: '/platform/roles/iron-altar/preview/deploy-role-arn',
   prodDeployRoleArn: '/platform/roles/iron-altar/prod/deploy-role-arn',
 } as const;

@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { Avatar } from '@/ui/avatar';
+import { AccountPanel } from '@/ui/account-panel';
 import { PixelButton } from '@/ui/button';
 import { NavBar } from '@/ui/nav-bar';
 import { Panel } from '@/ui/panel';
@@ -208,6 +209,8 @@ export default function ProfileScreen() {
           ))}
         </View>
       </Panel>
+
+      <AccountPanel />
 
       <PixelButton label="Reset Profile" variant="danger" onPress={reset} />
     </Screen>
