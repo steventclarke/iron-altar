@@ -277,6 +277,20 @@ Notes:
 - [ ] Store listing metadata.
 - [ ] Text-file import (#4, post-MVP candidate; confirm format before building).
 
+### Phase 8: In-App Issue Reporting — Design in review
+
+- [x] Document the client flow, data collection, API contract, privacy model, and backend
+      `IssueIntakeStack` design in `docs/issue-reporting-design.md`.
+- [x] Generate architecture, ingest/worker sequence, and report-lifecycle diagrams in
+      `docs/issue-reporting-architecture.md`.
+- [ ] Implement the intake stack and GitHub App integration in `issue-reporter`.
+- [ ] Publish `@issue-reporter/core` and `@issue-reporter/client` from `issue-reporter` so
+      tenant apps import the contract, redaction, transport, and error mapping.
+- [ ] Add the report button, screenshot capture, full app-data snapshot, logs, stack
+      traces, secret redaction, and public-report acknowledgement to the client.
+- [ ] Create GitHub labels and the GitHub App installation.
+- [ ] Deploy preview, verify end-to-end, then roll out production.
+
 ## 6. Feature Refinements (triaged)
 
 Efficiency rule: fold **structural** items (data model, domain, persistence, architecture)
@@ -340,6 +354,11 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
   versioned S3 (release bucket stack in place; EAS workflow pending); P7.3 responsive web,
   accessibility, empty states, privacy/support pages, store listing metadata, and text-file
   import (#4) — post-MVP candidate; confirm format before building.
+- **P8 In-App Issue Reporting (design in review):** client report form + screenshot capture,
+  a platform-global `IssueIntakeStack` in the separate `issue-reporter` repository, a
+  published `@issue-reporter/client` library that tenant apps configure, public GitHub
+  issues via a GitHub App, diagnostics redaction, rate limits, and a public-report
+  acknowledgement.
 
 ## 7. Hosting & Release Infrastructure (P7.1/P7.2)
 
