@@ -6,12 +6,14 @@
 
 - `steventclarke/iron-altar` — tenant client, report UI, screenshot capture, full app-data
   snapshot, logs, stack traces, and diagnostics.
-- `stevenclarke-infrastructure` — shared issue-intake backend, GitHub App integration,
-  CloudFront endpoint, storage, queues, and alarms.
+- `issue-reporter` — separate repository for the shared issue-intake backend, GitHub App
+  integration, CloudFront endpoint, storage, queues, and alarms, plus the published
+  tenant client library.
 
 This document defines the first version of in-app issue reporting for Iron Altar. The
 client and backend are designed so the same backend can serve other tenant applications
-later without creating a new intake service per app.
+later without creating a new intake service per app. The backend lives in its own
+repository so it can be reused, and potentially open-sourced, independently of Iron Altar.
 
 ---
 
@@ -24,9 +26,11 @@ captures the current screen, opens a report form, and submits the report to:
 POST https://issues.stevenclarke.dev/v1/reports
 ```
 
-The request is validated and rate-limited by an ingest Lambda, the screenshot is stored in
-S3, and a message is queued. A worker Lambda creates a GitHub issue in the public
-`steventclarke/iron-altar` repository using a GitHub App installation.
+The app submits through `@issue-reporter/client`, a published library owned by the
+`issue-reporter` repository. The request is validated and rate-limited by an ingest
+Lambda, the screenshot is stored in S3, and a message is queued. A worker Lambda creates a
+GitHub issue in the public `steventclarke/iron-altar` repository using a GitHub App
+installation.
 
 The report contains:
 
@@ -56,8 +60,8 @@ before submission.
 - Support screenshot capture on native and web without requiring a development build.
 - Treat web as the primary near-term reporting target; web captures the visible viewport
   only.
-- Keep the backend in `stevenclarke-infrastructure`; no hosted issue-reporting SaaS.
-- Make the backend reusable by other tenant apps.
+- Keep the backend in `issue-reporter`; no hosted issue-reporting SaaS.
+- Make the backend and the client library reusable by other tenant apps.
 - Keep operating cost near the existing platform budget.
 - Prevent obvious spam and duplicate submissions.
 
@@ -326,21 +330,39 @@ authentication.
 
 ## 6. Client design (`steventclarke/iron-altar`)
 
+The client is split between a reusable package owned by `issue-reporter` and app-specific
+code owned by Iron Altar:
+
+- **`issue-reporter` publishes two packages:** `@issue-reporter/core` (request types, Zod
+  schemas, shared limits, redaction) and `@issue-reporter/client` (installation ID
+  handling, transport, retry/idempotency semantics, typed errors). Neither package has a
+  React, React Native, Expo, or storage dependency.
+- **Iron Altar owns** the report form, screenshot capture, app-data snapshot, diagnostics,
+  log/stack-trace buffering, and the configuration that wires the library to the app.
+
+The app imports the library and configures it once; it does not reimplement the API client
+or the report contract.
+
 ### 6.1 New and changed files
 
-| File                            | Change                                                                  |
-| ------------------------------- | ----------------------------------------------------------------------- |
-| `src/app/report.tsx`            | New report form and submission flow                                     |
-| `src/app/_layout.tsx`           | Register the `report` screen; install log/error capture                 |
-| `src/ui/nav-bar.tsx`            | Add report button and screenshot capture trigger                        |
-| `src/lib/issue-report.ts`       | App data snapshot, diagnostics, logs, stack traces, API client          |
-| `src/lib/report-log-buffer.ts`  | Console and unhandled-error ring buffer                                 |
-| `src/lib/redact-secrets.ts`     | Client-side token/secret redaction                                      |
-| `src/lib/screenshot.ts`         | Screen capture helper                                                   |
-| `src/constants/issue-report.ts` | API URL, app slug, limits, redaction patterns                           |
-| `package.json`                  | Add `expo-file-system`, `react-native-view-shot`, and `html2canvas-pro` |
+| File                            | Change                                                                                        |
+| ------------------------------- | --------------------------------------------------------------------------------------------- |
+| `src/app/report.tsx`            | New report form and submission flow                                                           |
+| `src/app/_layout.tsx`           | Register the `report` screen; install log/error capture; initialize the reporter client       |
+| `src/ui/nav-bar.tsx`            | Add report button and screenshot capture trigger                                              |
+| `src/lib/issue-report.ts`       | App data snapshot, diagnostics, log/stack collection; exports the configured reporter         |
+| `src/lib/report-log-buffer.ts`  | Console and unhandled-error ring buffer                                                       |
+| `src/lib/screenshot.ts`         | Screen capture helper                                                                         |
+| `src/constants/issue-report.ts` | API URL, app slug, limits, redaction pattern overrides, storage adapter                       |
+| `package.json`                  | Add `@issue-reporter/client`, `expo-file-system`, `react-native-view-shot`, `html2canvas-pro` |
 
 ### 6.2 Dependencies
+
+Install the client library:
+
+```bash
+npm install @issue-reporter/client
+```
 
 Install the Expo-managed packages with Expo’s version resolver:
 
@@ -356,6 +378,9 @@ npm install html2canvas-pro
 
 Dependency roles:
 
+- `@issue-reporter/client` owns the report contract, redaction, installation ID handling,
+  request transport, and error mapping. It is framework-agnostic and runs in React Native,
+  browsers, and Node.
 - `react-native-view-shot` supports Android, iOS, web, and Expo Go.
 - `expo-file-system` supports Android, iOS, tvOS, and Expo Go, but not web. It is used only
   on native to read the captured temporary file.
@@ -374,7 +399,7 @@ No development build or EAS build is required for screenshot capture.
 2. If the captured width exceeds 1080 physical pixels, resize proportionally.
 3. Return the temporary file URI for preview.
 4. In `issue-report.ts`, read the file with the Expo FileSystem `File` class:
-   `new File(uri).base64()`.
+   `new File(uri).base64()`, then pass the base64 string to the reporter client.
 5. Delete the temporary file after a successful submission.
 6. Reject files larger than the configured limit (target: 1.5 MB decoded; hard max 3 MB).
 
@@ -400,17 +425,31 @@ platform.
 
 ### 6.4 Installation ID
 
-On first report, generate an ID with the existing `generateId()` helper and store it in
-AsyncStorage:
+The library exposes `getInstallationId()` and accepts a small storage adapter from the
+tenant, so it does not depend on AsyncStorage or any platform storage API. Iron Altar
+supplies an AsyncStorage-backed adapter and the key prefix:
 
-```text
-iron-altar/installation-id
+```ts
+const reporter = createIssueReporter({
+  endpoint: 'https://issues.stevenclarke.dev',
+  app: 'iron-altar',
+  environment: detectEnvironment(),
+  storage: {
+    get: (key) => AsyncStorage.getItem(key),
+    set: (key, value) => AsyncStorage.setItem(key, value),
+  },
+  storageKeyPrefix: 'iron-altar/',
+});
 ```
 
-This ID is pseudonymous but stable, allowing the backend to rate-limit per installation
-and correlate reports from the same install. It is public in the issue metadata.
+The library stores the value at `iron-altar/installation-id`, generating it with
+`crypto.randomUUID()` when unavailable. The ID is pseudonymous but stable, allowing the
+backend to rate-limit per installation and correlate reports from the same install. It is
+public in the issue metadata.
 
 ### 6.5 Environment detection
+
+Environment detection is app-specific because each tenant defines its own hostnames:
 
 ```ts
 function detectEnvironment(): 'prod' | 'preview' | 'dev' {
@@ -422,35 +461,95 @@ function detectEnvironment(): 'prod' | 'preview' | 'dev' {
 }
 ```
 
-The backend validates the environment value. Environment does not select the destination
-repository; the app config does.
+The app passes the result to `createIssueReporter`; the library validates it against the
+allowed values and includes it in the request. The backend validates the environment value
+again. Environment does not select the destination repository; the backend app config
+does.
 
 ### 6.6 Report ID and retries
 
-Generate one `reportId` when the form mounts:
+The library owns report ID and retry semantics:
+
+- `createReportId()` returns a UUID generated with `crypto.randomUUID()`.
+- `submit()` generates an ID when the caller does not supply one and returns it in both
+  success and error results so the form can retry with the same ID.
+- The library never retries automatically; retry is the caller's decision so the form can
+  preserve user input and explain the failure.
+- A retry with the same ID is safe: the backend returns the existing report instead of
+  creating a duplicate issue.
+
+Iron Altar creates the ID when the form mounts and passes it explicitly so the same ID
+survives re-renders:
 
 ```ts
-const reportId = useRef(generateId());
+const reportId = useRef(createReportId());
 ```
 
-A failed submission keeps the same ID. The backend returns the existing report if the ID
-has already been accepted.
+### 6.7 Client library (`@issue-reporter/client`)
 
-### 6.7 API client
+Published from `issue-reporter` and imported by the tenant app. The package is
+framework-agnostic: no React, React Native, Expo, AsyncStorage, or DOM imports, and no
+global `fetch` assumption. It exports:
 
-`src/lib/issue-report.ts` exports:
+- `createIssueReporter(config)` — validates config and returns a reporter instance.
+- `submit(input)` — redacts, serializes, enforces limits, sends `POST /v1/reports`, and
+  maps responses to typed results.
+- `createReportId()` and `getInstallationId()`.
+- `redactReport(input)` and the redaction pattern presets (re-exported from
+  `@issue-reporter/core`).
+- `estimateBase64Bytes(value)` and the shared limit constants.
+- `IssueReporterError` with `code`: `validation`, `forbidden_origin`,
+  `payload_too_large`, `rate_limited`, `network`, `server`.
 
-- `buildAppDataSnapshot(): AppDataSnapshot`;
-- `buildDiagnostics(): Diagnostics`;
-- `getRecentLogs(): LogEntry[]`;
-- `getRecentStackTraces(): StackTraceEntry[]`;
-- `redactReport(input): IssueReportRequest`;
-- `getInstallationId(): Promise<string>`;
-- `submitIssueReport(input): Promise<SubmitResult>`;
-- error mapping for validation, rate-limit, payload-too-large, and server errors.
+Configuration:
 
-The client sends `Content-Type: application/json` and does not send credentials or app
-secrets.
+```ts
+type IssueReporterConfig = {
+  endpoint: string;
+  app: string;
+  environment: 'prod' | 'preview' | 'dev';
+  storage: {
+    get(key: string): Promise<string | null>;
+    set(key: string, value: string): Promise<void>;
+  };
+  storageKeyPrefix?: string;
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+  extraRedactionPatterns?: RegExp[];
+  onDiagnostic?: (event: IssueReporterDiagnostic) => void;
+};
+```
+
+Behavioral guarantees:
+
+- Sends `Content-Type: application/json` and never sends credentials or app secrets.
+- Applies secret redaction to text, app data, logs, and stack traces before size checks.
+- Rejects oversized reports locally with `payload_too_large` and reports which part is
+  oversized; it never silently drops app data, logs, or stack traces.
+- Uses the injected `fetch`, so React Native, browsers, and tests share one implementation;
+  defaults to the global `fetch` when present.
+- Applies `timeoutMs` through `AbortController`; a timeout surfaces as `network`.
+- Reports only metadata through `onDiagnostic` (for example, `request_started`,
+  `response_received`, `rate_limited`) — never report content.
+
+The app builds the app-specific payload and calls the library:
+
+```ts
+const result = await reporter.submit({
+  reportId,
+  category,
+  summary,
+  description,
+  expected,
+  contact,
+  appData,
+  diagnostics,
+  logs,
+  stackTraces,
+  screenshot,
+  website,
+});
+```
 
 ### 6.8 Log and stack-trace capture
 
@@ -463,14 +562,20 @@ secrets.
 - capture unhandled native errors with `ErrorUtils.setGlobalHandler` and web errors with
   `window.addEventListener('error')` and `window.addEventListener('unhandledrejection')`;
 - keep the most recent 10 stack traces;
-- redact secret-like values at capture time and again immediately before submission;
+- call the library’s `redactReport` at capture time and again immediately before
+  submission;
 - do not capture component trees, full navigation state, network request bodies, or
   arbitrary global objects.
 
 ### 6.9 Secret redaction
 
-`src/lib/redact-secrets.ts` recursively walks report strings and replaces secret-like
-values with `[REDACTED]`. It covers at least:
+Redaction lives in `issue-reporter` and is shared by the client and backend:
+`redactReport` is exported by `@issue-reporter/client` and re-used by the ingest Lambda
+from the same `@issue-reporter/core` source. A single implementation prevents the client
+and server pattern lists from drifting.
+
+`redactReport` recursively walks report strings and replaces secret-like values with
+`[REDACTED]`. It covers at least:
 
 - GitHub tokens (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`);
 - AWS access key IDs (`AKIA`, `ASIA`) and secret-access-key assignments;
@@ -481,8 +586,10 @@ values with `[REDACTED]`. It covers at least:
   `authorization`, `api[_-]?key`, `private[_-]?key`, or `access[_-]?key`.
 
 The app does not store GitHub or AWS credentials, so normal app logs are secret-free. This
-redaction is defense in depth for user-pasted text and future code changes. The backend
-repeats the scan before writing S3 or creating the issue; if a log line cannot be safely
+redaction is defense in depth for user-pasted text and future code changes. Tenant apps can
+add app-specific patterns through `extraRedactionPatterns`; the defaults live in
+`@issue-reporter/core`. The backend repeats the scan with the same module before writing S3
+or creating the issue; if a log line cannot be safely
 scanned, it is dropped instead of sent raw.
 
 ---
@@ -496,6 +603,9 @@ POST https://issues.stevenclarke.dev/v1/reports
 ```
 
 ### 7.2 Request
+
+This shape is published as `IssueReportRequest` by `@issue-reporter/core` and re-exported
+by `@issue-reporter/client`; the app imports it rather than redeclaring it.
 
 ```ts
 type IssueReportRequest = {
@@ -696,7 +806,7 @@ the form shows a validation error and asks the user to remove or reduce the scre
 
 ---
 
-## 8. Backend design (`stevenclarke-infrastructure`)
+## 8. Backend design (`issue-reporter`)
 
 ### 8.1 Architecture
 
@@ -722,6 +832,9 @@ SQS worker queue  --->  Worker Lambda  ---> GitHub App ---> GitHub issue
 DLQ (failed messages)
 ```
 
+Rendered architecture, sequence, and lifecycle diagrams:
+[`issue-reporting-architecture.md`](./issue-reporting-architecture.md).
+
 ### 8.2 Why CloudFront + Lambda Function URL
 
 - The platform already owns the `stevenclarke.dev` hosted zone and wildcard certificate.
@@ -738,8 +851,9 @@ or usage plans.
 
 ### 8.3 `IssueIntakeStack`
 
-New stack: `lib/issue-intake-stack.ts`, wired in `bin/app.ts` after the DNS, certificate,
-and monitoring stacks.
+New stack in the `issue-reporter` repository: `lib/issue-intake-stack.ts`, wired in its
+own `bin/app.ts`. It reads shared platform values from SSM; it does not own the hosted
+zone, certificate, or monitoring topic.
 
 Inputs from SSM in `us-east-2`:
 
@@ -985,6 +1099,41 @@ placeholder after creating the app. The worker caches installation tokens in Lam
   descriptions, app data, logs, stack traces, contact details, screenshots, or the GitHub
   private key.
 
+### 8.12 Repository layout (`issue-reporter`)
+
+The repository is a small workspace so the published packages and the deployed backend
+share one source of truth:
+
+```text
+issue-reporter/
+  package.json                 workspace root; release tooling
+  packages/core/               @issue-reporter/core
+    src/contracts.ts           request/response types + Zod schemas
+    src/limits.ts              shared size and count limits
+    src/redaction.ts           shared secret patterns + redactReport
+  packages/client/             @issue-reporter/client
+    src/index.ts               createIssueReporter, submit, createReportId
+    src/install-id.ts          storage-adapter installation ID
+    src/errors.ts              IssueReporterError + response mapping
+  lambda/issue-intake/         ingest and worker handlers
+  lib/issue-intake-stack.ts    CDK stack
+  bin/app.ts                   CDK app
+```
+
+Dependency direction: `client` depends on `core`; the Lambda handlers depend on `core` but
+never on `client`. `core` has no platform dependencies beyond Zod. The Lambda bundle is
+built from the same `core` sources the client publishes, so contract and redaction changes
+ship together.
+
+Publishing:
+
+- `@issue-reporter/core` and `@issue-reporter/client` are versioned together with the
+  backend and published on release.
+- The client package declares a peer/runtime range that matches the deployed API major
+  version.
+- `@issue-reporter/client` is not used by the backend. The backend imports `core` at build
+  time and bundles it into the Lambda artifacts.
+
 ---
 
 ## 9. GitHub issue format
@@ -1111,18 +1260,23 @@ The backend is platform-global. Each tenant app gets:
   }
   ```
 
-```
-
 - a GitHub App installation (or a shared app installed on multiple repositories);
 - per-app SSM parameters:
   - `/platform/issue-intake/apps/<app>/app-id`
   - `/platform/issue-intake/apps/<app>/repo`
   - `/platform/issue-intake/apps/<app>/labels`;
-- a client implementation of the same report contract.
+- the shared client library: install `@issue-reporter/client` and configure it with the
+  app slug, endpoint, environment detection, a storage adapter, and optional app-specific
+  redaction patterns. Tenants do not reimplement the report contract, transport, or error
+  mapping.
 
 The stack builds `APP_CONFIG` from enabled apps. The ingest Lambda rejects unknown or
 disabled apps. The worker looks up the repository and labels by app slug. No per-app
 backend stack is needed.
+
+Onboarding a tenant therefore requires no backend code: add the app to
+`config/applications.ts`, publish its SSM parameters, install the client package, and wire
+the app-specific capture code.
 
 ---
 
@@ -1161,8 +1315,21 @@ installation is scoped to issues on the target repository and can be rotated cen
 
 ### Hosted issue-reporting SaaS
 
-Rejected: the project requires a self-owned backend in `stevenclarke-infrastructure` and
+Rejected: the project requires a self-owned backend in `issue-reporter` and
 no recurring SaaS dependency.
+
+### App-owned API client
+
+Rejected: duplicating the request contract, redaction, transport, and error mapping in each
+tenant app would let client and server behaviour drift. The client library is published
+from `issue-reporter` instead, so tenants configure one package and contract changes ship
+with the backend.
+
+### Monorepo coupling without publishing
+
+Rejected: tenants would need to vendor source or use a git dependency, which complicates
+versioning and reuse. Publishing `@issue-reporter/core` and `@issue-reporter/client` keeps
+the tenant dependency explicit and semver-versioned.
 
 ### Private repository
 
@@ -1184,13 +1351,27 @@ native code or a development build. The trade-off is limited SVG/chart fidelity 
 
 ## 13. Testing
 
-### Client
+### Client library (`issue-reporter`)
+
+- Unit tests for `createIssueReporter` config validation, including missing storage,
+  invalid app slug, and invalid environment.
+- Unit tests for `submit`: request shape, headers, injected `fetch`, `AbortController`
+  timeout, and response-to-error mapping for every documented status.
+- Unit tests for `redactReport` across text, app data, logs, stack traces, and tenant
+  `extraRedactionPatterns`.
+- Unit tests for `createReportId` and `getInstallationId`, including adapter failures and
+  reuse across calls.
+- Unit tests for local size limits and `estimateBase64Bytes`.
+- Bundle test: no React, React Native, Expo, AsyncStorage, or DOM imports; builds for
+  Node and ESM.
+- Contract tests: published `core` schemas accept the same fixtures the backend validates.
+
+### Client (`steventclarke/iron-altar`)
 
 - Unit tests for app-data snapshot shape; assert every `DatabaseShape` field is included.
 - Unit tests for diagnostics shape and environment detection.
 - Unit tests for log-buffer limits and stack-trace capture.
-- Unit tests for secret redaction across text, app data, logs, and stack traces.
-- Unit tests for error mapping and installation ID persistence.
+- Unit tests for the configured reporter instance and storage adapter wiring.
 - Manual tests in Expo Go on iOS/Android and in the web build.
 - Verify web screenshot capture returns base64 without importing `expo-file-system`.
 - Verify web captures only the visible viewport and still submits when capture fails.
@@ -1198,6 +1379,7 @@ native code or a development build. The trade-off is limited SVG/chart fidelity 
 - Verify the preview shows the exact app data, logs, stack traces, and diagnostics JSON.
 - Verify oversized reports show an error and do not silently drop data.
 - Verify retry reuses the same report ID.
+- Verify a library upgrade changes the dependency only, not app-specific capture code.
 
 ### Backend
 
@@ -1242,11 +1424,11 @@ native code or a development build. The trade-off is limited SVG/chart fidelity 
 ## 14. Rollout plan
 
 1. **Design review:** approve this document.
-2. **Platform implementation:** add `IssueIntakeStack`, Lambda code, tests, SSM outputs,
-   and docs in `stevenclarke-infrastructure`.
+2. **Issue reporter implementation:** add `IssueIntakeStack`, Lambda code, tests, SSM
+   outputs, and docs in `issue-reporter`.
 3. **GitHub setup:** create the GitHub App, install it on `steventclarke/iron-altar`,
    populate the secret, and create labels.
-4. **Deploy preview:** deploy the platform stack to preview and verify the endpoint.
+4. **Deploy preview:** deploy the intake stack to preview and verify the endpoint.
 5. **Client implementation:** add the report button, form, full app-data snapshot, log and
    stack-trace capture, secret redaction, screenshot capture, and public warning.
 6. **Preview verification:** submit real reports from the preview app and confirm issues.
@@ -1278,16 +1460,28 @@ No production deploy should happen before the GitHub App secret is configured.
     transport metadata and more identifying than the username.
 11. **Web SVG fidelity:** accept imperfect `react-native-svg` chart captures on web, or
     disable screenshots on chart routes until fidelity improves?
+12. **Client library distribution:** publish `@issue-reporter/client` publicly to npm from
+    the start, or keep it private/on GitHub Packages until the repo is open-sourced?
+    Recommendation: private registry initially, public npm when the repository is
+    open-sourced; keep the name and version scheme unchanged across the switch.
+13. **Contract versioning:** should the client library refuse to submit when its major
+    version does not match the API major, or rely on the `/v1` path and server validation?
+    Recommendation: `/v1` path plus a semver major check in the client with an opt-out.
 
 ---
 
 ## 16. Implementation checklist
 
-### Platform (`stevenclarke-infrastructure`)
+### Issue reporter (`issue-reporter`)
 
 - [ ] Add `issueIntake` to `config/applications.ts`.
+- [ ] Add `packages/core/` contracts, limits, and redaction shared by client and backend.
+- [ ] Add `packages/client/` with `createIssueReporter`, `submit`, report ID, installation
+      ID, and typed errors.
+- [ ] Add a release workflow that publishes `@issue-reporter/core` and
+      `@issue-reporter/client` with matching versions.
 - [ ] Add `lambda/issue-intake/` handlers and helpers.
-- [ ] Add secret redaction and report JSON upload.
+- [ ] Add report JSON upload and reuse `core` redaction in the ingest handler.
 - [ ] Add issue-body rendering with logs, stack traces, and full-data link.
 - [ ] Add `lib/issue-intake-stack.ts`.
 - [ ] Wire the stack in `bin/app.ts`.
@@ -1298,15 +1492,18 @@ No production deploy should happen before the GitHub App secret is configured.
 
 ### Client (`steventclarke/iron-altar`)
 
-- [ ] Install `expo-file-system`, `react-native-view-shot`, and `html2canvas-pro`.
+- [ ] Install `@issue-reporter/client`, `expo-file-system`, `react-native-view-shot`, and
+      `html2canvas-pro`.
 - [ ] Add `src/lib/screenshot.ts` with native `tmpfile` and web `base64` paths.
 - [ ] Add `src/lib/report-log-buffer.ts` for console and unhandled-error capture.
-- [ ] Add `src/lib/redact-secrets.ts` for client-side token/secret redaction.
-- [ ] Add `src/lib/issue-report.ts` for app data, diagnostics, logs, stack traces, and API.
-- [ ] Add `src/constants/issue-report.ts`.
+- [ ] Add `src/lib/issue-report.ts` for app data, diagnostics, logs, stack traces, and the
+      configured reporter instance.
+- [ ] Add `src/constants/issue-report.ts` with endpoint, app slug, limits, storage adapter,
+      and redaction overrides.
 - [ ] Add `src/app/report.tsx`.
 - [ ] Add the report button to `src/ui/nav-bar.tsx`.
-- [ ] Register the `report` route and install log capture in `src/app/_layout.tsx`.
+- [ ] Register the `report` route, install log capture, and initialize the reporter in
+      `src/app/_layout.tsx`.
 - [ ] Add tests and run format/lint/typecheck/build.
 - [ ] Verify web capture (visible viewport only) and native capture in Expo Go, preview,
       and production.
@@ -1318,4 +1515,7 @@ No production deploy should happen before the GitHub App secret is configured.
 - [ ] Install it on `steventclarke/iron-altar`.
 - [ ] Store the app ID, installation ID, and private key in Secrets Manager.
 - [ ] Create the issue labels.
+
+```
+
 ```

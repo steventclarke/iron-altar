@@ -281,8 +281,11 @@ Notes:
 
 - [x] Document the client flow, data collection, API contract, privacy model, and backend
       `IssueIntakeStack` design in `docs/issue-reporting-design.md`.
-- [ ] Implement the platform intake stack and GitHub App integration in
-      `stevenclarke-infrastructure`.
+- [x] Generate architecture, ingest/worker sequence, and report-lifecycle diagrams in
+      `docs/issue-reporting-architecture.md`.
+- [ ] Implement the intake stack and GitHub App integration in `issue-reporter`.
+- [ ] Publish `@issue-reporter/core` and `@issue-reporter/client` from `issue-reporter` so
+      tenant apps import the contract, redaction, transport, and error mapping.
 - [ ] Add the report button, screenshot capture, full app-data snapshot, logs, stack
       traces, secret redaction, and public-report acknowledgement to the client.
 - [ ] Create GitHub labels and the GitHub App installation.
@@ -352,8 +355,10 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
   accessibility, empty states, privacy/support pages, store listing metadata, and text-file
   import (#4) — post-MVP candidate; confirm format before building.
 - **P8 In-App Issue Reporting (design in review):** client report form + screenshot capture,
-  platform-global `IssueIntakeStack` in `stevenclarke-infrastructure`, public GitHub issues
-  via a GitHub App, diagnostics redaction, rate limits, and a public-report acknowledgement.
+  a platform-global `IssueIntakeStack` in the separate `issue-reporter` repository, a
+  published `@issue-reporter/client` library that tenant apps configure, public GitHub
+  issues via a GitHub App, diagnostics redaction, rate limits, and a public-report
+  acknowledgement.
 
 ## 7. Hosting & Release Infrastructure (P7.1/P7.2)
 
