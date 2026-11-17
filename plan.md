@@ -15,7 +15,8 @@ as you train. Must run on iOS, Android, and web.
 - **Expo (React Native) + TypeScript.** One codebase for iOS, Android, web.
 - **Real web deployment target** — we will ship a hosted URL (static web export).
 - **Offline-only, no accounts, no login for v1.** Data is local-first. Architecture must
-  keep an auth/sync seam so federated login (Apple/Google) and cloud sync can be added later.
+  keep an auth/sync seam. Google sign-in is scoped as P9 (blocked on platform Phase 10);
+  cloud sync remains deferred.
 
 ### Data & tracking
 
@@ -61,6 +62,8 @@ as you train. Must run on iOS, Android, and web.
 - **Language:** TypeScript.
 - **Navigation:** Expo Router (file-based; real URLs on web).
 - **State:** Zustand with a repository layer over storage.
+- **Auth (P9):** platform shared **Amazon Cognito** user pool with Google federation; an
+  app-owned public PKCE client per environment, using `expo-auth-session` + `expo-crypto`.
 - **Persistence:** local-first, **single versioned JSON document** (`AsyncStorage`) behind a
   repository layer, with migrations in `src/data/db`.
   - **Why not SQLite (chosen during P1):** `expo-sqlite` on web requires `SharedArrayBuffer`
@@ -95,8 +98,12 @@ src/
     (tabs)/progress       # data viz
     (tabs)/profile
     session/[id]          # active session log
+    login                 # Google sign-in (P9)
+    auth/callback         # OIDC redirect handler (P9)
+    logout                # sign-out (P9)
   domain/                 # types + pure logic (XP, volume, 1RM, stage calc, units)
   data/                   # db, repositories, migrations, seed, auth/sync seam
+  auth/                   # OIDC client, PKCE, token validation, session store (P9)
   state/                  # zustand stores
   ui/                     # components, theme, pixel primitives, avatar
   art/                    # sprite-sheet format + character registry
@@ -106,7 +113,8 @@ assets/                   # fonts, sprite sheets
 
 **Auth/sync seam:** all reads/writes go through repositories. A `SyncAdapter` interface
 (no-op in v1) sits behind them so a remote backend + login can be slotted in later without
-touching UI.
+touching UI. P9 adds Google sign-in through the platform's shared Cognito pool for identity
+only; sync stays a no-op and no training data leaves the device.
 
 ## 3. Data Model
 
@@ -136,6 +144,8 @@ Notes:
 5. **Data Viz** — line/bar charts per main lift + body weight.
 6. **Gamification** — XP formula, 10 avatar stages, weekly decay, weekly streak reset,
    XP up/down trend indicator.
+7. **Google sign-in (P9)** — optional sign-in via the platform's shared Cognito pool and
+   Google federation; identity only, no feature gating, no data leaves the device.
 
 ## 5. Phases / Milestones
 
@@ -291,6 +301,43 @@ Notes:
 - [ ] Create GitHub labels and the GitHub App installation.
 - [ ] Deploy preview, verify end-to-end, then roll out production.
 
+### Phase 9: Google SSO Sign-In — Blocked on platform Phase 10
+
+Platform contract: `../stevenclarke-infrastructure/docs/google-sso-for-tenant-apps.md`
+(status there is target design, not yet deployed). Do not start app-side work until the
+platform `AuthStack`/`OidcStack` is live and the `/platform/auth/*` SSM parameters exist.
+
+- [ ] Confirm the platform Cognito Hosted UI domain, shared pool, Google IdP, and
+      `/platform/auth/*` SSM parameters are deployed in `us-east-2`; confirm the app deploy
+      roles carry the scoped `cognito-idp` client-management permissions (request changes in
+      the platform repo rather than broadening roles).
+- [ ] Add env config for the auth SSM paths, callback/logout URLs, and app-owned client-ID
+      parameter; keep AWS account IDs, pool IDs, and Google credentials out of the repo.
+- [ ] Create a public `UserPoolClient` per environment in the app CDK stacks: imported shared
+      pool, auth-code + PKCE only, `openid email profile`, no client secret, 1 h ID/access
+      tokens, 30 d refresh token, exact callback/logout URLs.
+- [ ] Register redirect URIs: web prod/preview `/auth/callback`, `http://localhost:8081/...`
+      for local dev, and the native `ironaltar://auth/callback` scheme (Cognito accepts
+      custom schemes; `exp://` is unstable, so native SSO requires a development build).
+- [ ] Publish the client ID to an app-scoped SSM parameter and CloudFormation output; extend
+      the deploy workflows to write `auth-config.json` (domain, issuer, client ID) into the
+      web export before syncing to S3.
+- [ ] Add `expo-auth-session`, `expo-crypto`, and `expo-secure-store`; implement the auth
+      module with PKCE + state, code exchange, claim validation, session restore, and a
+      Zustand session store.
+- [ ] Add `/login`, `/auth/callback`, and `/logout` routes plus a "Sign in with Google" entry
+      on Profile; return to the originating route after callback and no-op locally on cancel.
+- [ ] Session handling: SecureStore on native; on web keep tokens in memory and rely on the
+      Cognito Hosted UI session for renewal. Never persist refresh tokens in `localStorage`.
+- [ ] Extend the CloudFront response headers policy with CSP `connect-src`, `form-action`,
+      and `img-src` entries for the auth domain and `*.googleusercontent.com`.
+- [ ] Keep sign-in optional: no feature gating, no sync, and local-first data flow unchanged;
+      the `SyncAdapter` stays a no-op.
+- [ ] Add tests: PKCE/state generation, claim validation, session store, CDK assertions
+      (public client, PKCE, callbacks, no secret, CSP), and the platform SSO checklist.
+- [ ] Add `docs/google-sso.md` with app-specific values, redirect matrix, and troubleshooting.
+- [ ] Deploy preview and verify sign-in/out on web and a development build, then production.
+
 ## 6. Feature Refinements (triaged)
 
 Efficiency rule: fold **structural** items (data model, domain, persistence, architecture)
@@ -359,6 +406,8 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
   published `@issue-reporter/client` library that tenant apps configure, public GitHub
   issues via a GitHub App, diagnostics redaction, rate limits, and a public-report
   acknowledgement.
+- **P9 Google SSO (blocked):** optional Google sign-in through the platform's shared Cognito
+  pool and per-app client; identity only, no gating or sync. See sections 5 and 8.
 
 ## 7. Hosting & Release Infrastructure (P7.1/P7.2)
 
@@ -630,3 +679,91 @@ deployments.
 **Out of scope for P7.1/P7.2:** platform DNS, GoDaddy delegation, shared certificates, OIDC
 roles, VPC/shared database, the portfolio app, PR-ephemeral previews, multi-region, WAF,
 OTA updates, account sync, store auto-submission, and a custom backend.
+
+## 8. Google SSO Onboarding (P9)
+
+Integration contract: `../stevenclarke-infrastructure/docs/google-sso-for-tenant-apps.md`.
+The platform owns the shared Cognito user pool, Google IdP, Hosted UI domain,
+`/platform/auth/*` SSM parameters, and the scoped deploy-role permissions. Iron Altar owns
+one public app client per environment, the sign-in/callback/logout routes, session handling,
+claim validation, and the CSP. Do not create a second user pool or a Google OAuth client.
+
+### Platform values consumed (not hardcoded)
+
+| SSM parameter                    | Use                                                          |
+| -------------------------------- | ------------------------------------------------------------ |
+| `/platform/auth/region`          | Cognito region (Cognito endpoint host)                       |
+| `/platform/auth/domain`          | Hosted UI base URL (browser + `expo-auth-session` discovery) |
+| `/platform/auth/user-pool-id`    | Pool to import for the app client                            |
+| `/platform/auth/issuer`          | Expected `iss` claim                                         |
+| `/platform/auth/google-idp-name` | `identity_provider` on `/oauth2/authorize`                   |
+
+The app publishes `/apps/iron-altar/<environment>/auth-client-id`; extend
+`infra/config/environments.ts` with these paths and callback/logout URLs.
+
+### Redirect matrix
+
+| Surface | Environment         | Redirect URI                                                             |
+| ------- | ------------------- | ------------------------------------------------------------------------ |
+| Web     | prod                | `https://iron-altar.stevenclarke.dev/auth/callback`                      |
+| Web     | preview             | `https://iron-altar-preview.stevenclarke.dev/auth/callback`              |
+| Web     | local dev           | `http://localhost:8081/auth/callback`                                    |
+| Native  | dev build / release | `ironaltar://auth/callback`                                              |
+| Expo Go | —                   | unsupported: `exp://` host/port is unstable and cannot be pre-registered |
+
+Register prod URLs only on the prod client. Register preview, localhost, and the native
+scheme on the preview client; register the native scheme on prod only when a production
+development/release build needs it. Cognito supports custom URI schemes and loopback HTTP
+for local development.
+
+### Config delivery
+
+- Deploy workflow reads `/platform/auth/*` and the stack's client-ID output, writes
+  `dist/auth-config.json`, then syncs the export to S3. No rebuild is needed when the
+  platform rotates its domain; no secrets are involved.
+- Local dev reads the same shape from `EXPO_PUBLIC_*` env vars (preview client).
+- Native selects preview vs prod config by build profile; never bundle the pool ID or
+  Google credentials.
+
+### Session and token strategy
+
+| Surface | Storage                                                                     | Renewal                                                                                               |
+| ------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Web     | ID/access tokens in memory only                                             | Silent re-auth (`prompt=none`) against the shared Cognito session; no refresh token in `localStorage` |
+| Native  | Refresh token + ID/access in SecureStore                                    | Restore on launch; refresh before expiry; clear all on sign-out                                       |
+| Both    | Clear app session and call Hosted UI `/logout?client_id=...&logout_uri=...` | Sign-out must end both the app session and the shared Cognito session                                 |
+
+Validate `iss`, `aud` (client ID), `exp`, `token_use`, and `email_verified` on every restore.
+Verify the JWT signature via JWKS only where WebCrypto exists; on native, claim validation is
+the P9 baseline (see open decisions). Sign-in is optional and identity-only: no gating, no
+sync, local-first data flow unchanged.
+
+### CSP additions
+
+Add to the CloudFront response headers policy (synth-time domain from SSM):
+
+```
+connect-src 'self' https://<auth-domain>;
+form-action 'self' https://<auth-domain> https://accounts.google.com;
+img-src 'self' data: https://*.googleusercontent.com;
+```
+
+Keep the policy values narrow; assert them in CDK tests instead of relying on manual checks.
+
+### Verification
+
+- Platform checklist: prod and preview sign-in complete on the exact registered URIs;
+  long-lived Cognito session reuses SSO; state mismatch and missing PKCE are rejected; wrong
+  issuer/audience is rejected; sign-out clears both sessions; no tokens in URLs, logs, or
+  `localStorage`.
+- App checklist: deep link on web and a development build; cancel returns to Profile; silent
+  refresh on web reload; native relaunch restores session; CSP does not block token/avatar
+  requests; preview then prod.
+
+### Open decisions
+
+1. Web session durability: in-memory + silent re-auth (P9 default) vs. a small BFF for
+   HttpOnly refresh cookies. A BFF is out of scope until sync exists.
+2. Native signature verification: claim-only (P9 baseline) vs. adding `jose` + a WebCrypto
+   polyfill.
+3. Whether preview sign-ins should tag app state so test accounts are distinguishable.
