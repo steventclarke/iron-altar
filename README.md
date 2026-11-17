@@ -15,7 +15,7 @@ app, and supports two deployments: `preview` and `prod`.
 
 - [spec.md](./spec.md) - Original brief
 - [plan.md](./plan.md) - Build plan, phases, decisions, and status
-- [docs/google-sso.md](./docs/google-sso.md) - Optional Google sign-in setup and behavior
+- [docs/google-sso.md](./docs/google-sso.md) - Google sign-in, landing gate, and session behavior
 - `src/` - Expo Router screens, domain logic, data layer, state, and UI
 - `assets/` - Fonts, sprites, and app icons
 - `infra/` - Application CDK app (S3, CloudFront, DNS records, mobile release bucket)
@@ -73,8 +73,9 @@ SDK-compatible version. Expo Go only includes its bundled native modules; after 
 library with native code, use a development build (`npx expo run:ios|android` or
 `eas build --profile development`).
 
-Google sign-in is optional and never required to use the app. Local setup, redirect URLs,
-and session behavior are documented in [docs/google-sso.md](./docs/google-sso.md).
+Google sign-in is optional and never required to use the app. A planned Phase 9.1 landing
+gate will ask users to sign in with Google or continue as anonymous; local setup, redirect
+URLs, and session behavior are documented in [docs/google-sso.md](./docs/google-sso.md).
 
 ## Application infrastructure (CDK)
 
