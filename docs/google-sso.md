@@ -106,6 +106,13 @@ Web signature verification uses `jose` and the platform JWKS. Native P9 validate
 token claims (`iss`, `aud`, `exp`, `token_use`, `email_verified`) but not the RS256
 signature because Hermes lacks WebCrypto; a backend or polyfill can tighten this later.
 
+Cognito currently maps the Google `email` claim but not `email_verified`, so federated users
+arrive with `email_verified=false`. Iron Altar accepts the sign-in for identity display but
+hides the email until the platform adds
+`emailVerified: cognito.ProviderAttribute.GOOGLE_EMAIL_VERIFIED` to the Google IdP attribute
+mapping and redeploys; existing users update on their next sign-in. Adding a Google Cloud
+test user fixes consent-screen access; it does not set this claim.
+
 ## CSP
 
 CloudFront sends a CSP that allows:
@@ -117,10 +124,11 @@ CloudFront sends a CSP that allows:
 
 ## Troubleshooting
 
-| Symptom                                                | Likely cause                                                                   |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `redirect_uri_mismatch` / `invalid_request` at Cognito | Callback URL differs from the client config (scheme, port, trailing slash).    |
-| "Sign-in is not configured"                            | `auth-config.json` missing or `EXPO_PUBLIC_AUTH_*` unset.                      |
-| State/verifier error after returning                   | Pending sign-in was cleared (new tab, private mode, app restart). Start again. |
-| CSP blocks token/JWKS request                          | Hosted UI or Cognito region changed; update the CSP and redeploy.              |
-| Google prompt appears repeatedly                       | Cognito session ended or cookies blocked; expected after sign-out.             |
+| Symptom                                                | Likely cause                                                                                |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| “The Google account email is not verified”             | Cognito is not mapping Google `email_verified`; the app hides the email but still signs in. |
+| `redirect_uri_mismatch` / `invalid_request` at Cognito | Callback URL differs from the client config (scheme, port, trailing slash).                 |
+| "Sign-in is not configured"                            | `auth-config.json` missing or `EXPO_PUBLIC_AUTH_*` unset.                                   |
+| State/verifier error after returning                   | Pending sign-in was cleared (new tab, private mode, app restart). Start again.              |
+| CSP blocks token/JWKS request                          | Hosted UI or Cognito region changed; update the CSP and redeploy.                           |
+| Google prompt appears repeatedly                       | Cognito session ended or cookies blocked; expected after sign-out.                          |
