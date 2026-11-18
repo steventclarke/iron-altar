@@ -339,6 +339,10 @@ feature requires a session.
       Client-side unit-test coverage remains a follow-up (the app has no Jest harness yet).
 - [x] Added `docs/google-sso.md` with app-specific values, redirect matrix, local setup,
       session behavior, CSP, and troubleshooting; linked it from the README.
+- [ ] Platform follow-up: map Google `email_verified` onto Cognito's `email_verified`
+      attribute (`cognito.ProviderAttribute.GOOGLE_EMAIL_VERIFIED`). Cognito currently leaves
+      federated users at `email_verified=false`, so the app accepts sign-in but hides the
+      email until the platform mapping ships.
 - [x] Deployed the preview stack: client `iron-altar-preview` created, CSP live, and the
       authorize request redirects to Google's consent screen.
 - [ ] Complete interactive sign-in/out verification on preview web and a development build,
@@ -745,8 +749,10 @@ loopback URLs. Cognito supports custom URI schemes and loopback HTTP for local d
 
 Validate `iss`, `aud` (client ID), `exp`, `token_use`, and `email_verified`. Web verifies
 the RS256 signature against JWKS with `jose`; native validates claims only because Hermes
-lacks WebCrypto. Sign-in is optional and identity-only: no gating, no sync, local-first data
-flow unchanged.
+lacks WebCrypto. Cognito currently maps Google `email` but not `email_verified`, so federated
+users arrive with `email_verified=false`; the app accepts the identity but hides the email
+until the platform maps `GOOGLE_EMAIL_VERIFIED`. Sign-in is optional and identity-only: no
+gating, no sync, local-first data flow unchanged.
 
 ### CSP
 
