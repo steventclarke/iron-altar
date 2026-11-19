@@ -25,14 +25,18 @@ export function AccountPanel() {
   }
 
   if (session) {
+    const { identity } = session;
+    const label = identity.name ?? identity.email ?? 'Google account';
     return (
       <Panel>
         <PixelText variant="label" color={Palette.textSecondary}>
           Account
         </PixelText>
-        <PixelText variant="body">{session.identity.name ?? session.identity.email}</PixelText>
+        <PixelText variant="body">{label}</PixelText>
         <PixelText variant="caption" color={Palette.textSecondary}>
-          {session.identity.email} · {session.environment}
+          {identity.email
+            ? `${identity.email} · ${session.environment}`
+            : `Signed in with Google · ${session.environment}`}
         </PixelText>
         <PixelText variant="caption" color={Palette.textMuted}>
           Identity only. Training data stays on this device.

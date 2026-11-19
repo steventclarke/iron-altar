@@ -339,6 +339,10 @@ optional because anonymous access is always available.
       Client-side unit-test coverage remains a follow-up (the app has no Jest harness yet).
 - [x] Added `docs/google-sso.md` with app-specific values, redirect matrix, local setup,
       session behavior, CSP, and troubleshooting; linked it from the README.
+- [ ] Platform follow-up: map Google `email_verified` onto Cognito's `email_verified`
+      attribute (`cognito.ProviderAttribute.GOOGLE_EMAIL_VERIFIED`). Cognito currently leaves
+      federated users at `email_verified=false`, so the app accepts sign-in but hides the
+      email until the platform mapping ships.
 - [x] Deployed the preview stack: client `iron-altar-preview` created, CSP live, and the
       authorize request redirects to Google's consent screen.
 - [ ] Complete interactive sign-in/out verification on preview web and a development build,

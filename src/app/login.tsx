@@ -41,7 +41,9 @@ export default function LoginScreen() {
           <PixelText variant="label" color={Palette.gold}>
             SIGNED IN
           </PixelText>
-          <PixelText variant="body">{session.identity.email ?? session.identity.name}</PixelText>
+          <PixelText variant="body">
+            {session.identity.name ?? session.identity.email ?? 'Google account'}
+          </PixelText>
           <PixelText variant="caption" color={Palette.textSecondary}>
             This identity is only shown here. Training data stays on this device.
           </PixelText>

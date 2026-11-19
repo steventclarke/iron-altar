@@ -54,13 +54,12 @@ export function validateClaims(
     throw new Error('The sign-in token has expired.');
   }
   if (claims.token_use !== 'id') throw new Error('The sign-in token has the wrong type.');
-  if (claims.email && claims.email_verified !== true && claims.email_verified !== 'true') {
-    throw new Error('The Google account email is not verified.');
-  }
+  const emailVerified = claims.email_verified === true || claims.email_verified === 'true';
 
   return {
     sub: claims.sub,
-    email: claims.email ?? null,
+    email: emailVerified ? (claims.email ?? null) : null,
+    emailVerified,
     name: claims.name ?? null,
     picture: claims.picture ?? null,
   };
