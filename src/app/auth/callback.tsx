@@ -20,6 +20,7 @@ export default function AuthCallbackScreen() {
     error_description?: string;
   }>();
   const setSession = useAuthStore((s) => s.setSession);
+  const continueAnonymous = useAuthStore((s) => s.continueAnonymous);
   const [error, setError] = useState<string | null>(null);
   const started = useRef(false);
 
@@ -31,17 +32,26 @@ export default function AuthCallbackScreen() {
       try {
         const pending = await loadPendingAuth();
         if (!pending) {
-          throw new Error('Sign-in expired. Start again from the sign-in screen.');
+          throw new Error('Sign-in expired. Start again from the welcome screen.');
         }
         const config = await loadAuthConfig();
         const session = await completeSignIn(params, config, pending);
-        setSession(session);
-        router.replace(pending.returnTo as never);
+        await setSession(session);
+        router.replace('/');
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Google sign-in failed.');
       }
     })();
   }, [params, setSession]);
+
+  const skip = async () => {
+    try {
+      await continueAnonymous();
+      router.replace('/');
+    } catch {
+      setError('Could not start anonymous mode.');
+    }
+  };
 
   return (
     <Screen header={<NavBar />}>
@@ -55,6 +65,8 @@ export default function AuthCallbackScreen() {
             <PixelText variant="body" color={Palette.textSecondary}>
               {error}
             </PixelText>
+            <PixelButton label="Try again" onPress={() => router.replace('/welcome')} />
+            <PixelButton label="Continue as anonymous" variant="secondary" onPress={skip} />
           </>
         ) : (
           <>
@@ -67,13 +79,6 @@ export default function AuthCallbackScreen() {
           </>
         )}
       </Panel>
-
-      {error ? <PixelButton label="Try again" onPress={() => router.replace('/login')} /> : null}
-      <PixelButton
-        label="Continue without signing in"
-        variant="secondary"
-        onPress={() => router.replace('/')}
-      />
     </Screen>
   );
 }

@@ -21,7 +21,7 @@ export default function LogoutScreen() {
     (async () => {
       await clear();
       await finishSignOut();
-      router.replace('/');
+      router.replace('/welcome');
     })();
   }, [clear]);
 
@@ -33,7 +33,7 @@ export default function LogoutScreen() {
           Clearing this session. Your training data stays on this device.
         </PixelText>
       </Panel>
-      <PixelButton label="Continue without signing in" onPress={() => router.replace('/')} />
+      <PixelButton label="Back to welcome" onPress={() => router.replace('/welcome')} />
     </Screen>
   );
 }

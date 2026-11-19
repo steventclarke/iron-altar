@@ -19,9 +19,15 @@ import { useSessionStore } from '@/state/session-store';
 
 SplashScreen.preventAutoHideAsync();
 
+export const unstable_settings = {
+  anchor: 'welcome',
+};
+
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({ PressStart2P_400Regular, VT323_400Regular });
   const [dbReady, setDbReady] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const status = useAuthStore((s) => s.status);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,15 +37,19 @@ export default function RootLayout() {
       useProfileStore.getState().hydrate();
       useSessionStore.getState().hydrate();
       useRestTimer.getState().hydrate();
-      void useAuthStore.getState().hydrate();
-      if (!cancelled) setDbReady(true);
+      await useAuthStore.getState().hydrate();
+      if (!cancelled) {
+        setDbReady(true);
+        setAuthReady(true);
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const ready = (fontsLoaded || fontError) && dbReady;
+  const ready = (fontsLoaded || fontError) && dbReady && authReady;
+  const entered = status === 'signedIn' || status === 'anonymous';
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync();
@@ -56,15 +66,17 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: Palette.void },
         }}
       >
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="session/[id]" />
-        <Stack.Screen name="rest-timer" />
-        <Stack.Screen name="history/[id]" />
-        <Stack.Screen name="progress/[lift]" />
-        <Stack.Screen name="progress/body-weight" />
-        <Stack.Screen name="login" />
+        <Stack.Screen name="welcome" />
         <Stack.Screen name="auth/callback" />
-        <Stack.Screen name="logout" />
+        <Stack.Protected guard={entered} redirectTo="/welcome">
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="session/[id]" />
+          <Stack.Screen name="rest-timer" />
+          <Stack.Screen name="history/[id]" />
+          <Stack.Screen name="progress/[lift]" />
+          <Stack.Screen name="progress/body-weight" />
+          <Stack.Screen name="logout" />
+        </Stack.Protected>
       </Stack>
     </SafeAreaProvider>
   );

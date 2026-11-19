@@ -73,9 +73,10 @@ SDK-compatible version. Expo Go only includes its bundled native modules; after 
 library with native code, use a development build (`npx expo run:ios|android` or
 `eas build --profile development`).
 
-Google sign-in is optional and never required to use the app. A planned Phase 9.1 landing
-gate will ask users to sign in with Google or continue as anonymous; local setup, redirect
-URLs, and session behavior are documented in [docs/google-sso.md](./docs/google-sso.md).
+Google sign-in is optional and never required to use the app. The app opens at a `/welcome`
+landing gate where users choose to sign in with Google or continue as anonymous; local setup,
+redirect URLs, and session behavior are documented in
+[docs/google-sso.md](./docs/google-sso.md).
 
 ## Application infrastructure (CDK)
 

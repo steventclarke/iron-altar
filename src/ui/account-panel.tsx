@@ -18,7 +18,7 @@ export function AccountPanel() {
           Account
         </PixelText>
         <PixelText variant="caption" color={Palette.textMuted}>
-          Checking sign-in…
+          Checking your entry mode…
         </PixelText>
       </Panel>
     );
@@ -51,18 +51,40 @@ export function AccountPanel() {
     );
   }
 
+  if (status === 'anonymous') {
+    return (
+      <Panel>
+        <PixelText variant="label" color={Palette.textSecondary}>
+          Account
+        </PixelText>
+        <PixelText variant="body" color={Palette.textSecondary}>
+          Anonymous
+        </PixelText>
+        <PixelText variant="caption" color={Palette.textMuted}>
+          Local mode. Sign out to switch to Google.
+        </PixelText>
+        <PixelButton
+          label="Sign out"
+          variant="secondary"
+          style={styles.button}
+          onPress={() => router.push('/logout')}
+        />
+      </Panel>
+    );
+  }
+
   return (
     <Panel>
       <PixelText variant="label" color={Palette.textSecondary}>
         Account
       </PixelText>
       <PixelText variant="body" color={Palette.textSecondary}>
-        Signing in is optional — keep training locally without an account.
+        Choose how to enter on the welcome screen.
       </PixelText>
       <PixelButton
-        label="Sign in with Google"
+        label="Go to welcome"
         style={styles.button}
-        onPress={() => router.push('/login')}
+        onPress={() => router.replace('/welcome')}
       />
     </Panel>
   );

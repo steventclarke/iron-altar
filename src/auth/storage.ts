@@ -8,10 +8,16 @@ const SESSION_ID_TOKEN_KEY = 'iron-altar.auth.session.id-token';
 const SESSION_ACCESS_TOKEN_KEY = 'iron-altar.auth.session.access-token';
 const SESSION_REFRESH_TOKEN_KEY = 'iron-altar.auth.session.refresh-token';
 const PENDING_KEY = 'iron-altar.auth.pending';
+const ANONYMOUS_KEY = 'iron-altar.auth.anonymous';
 
 function sessionStorage(): Storage | null {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
   return window.sessionStorage;
+}
+
+function localStorage(): Storage | null {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+  return window.localStorage;
 }
 
 export async function savePendingAuth(pending: PendingAuth): Promise<void> {
@@ -87,4 +93,28 @@ export async function clearStoredSession(): Promise<void> {
     SecureStore.deleteItemAsync(SESSION_ACCESS_TOKEN_KEY),
     SecureStore.deleteItemAsync(SESSION_REFRESH_TOKEN_KEY),
   ]);
+}
+
+export async function saveAnonymousEntry(): Promise<void> {
+  const store = localStorage();
+  if (store) {
+    store.setItem(ANONYMOUS_KEY, 'true');
+    return;
+  }
+  await SecureStore.setItemAsync(ANONYMOUS_KEY, 'true');
+}
+
+export async function loadAnonymousEntry(): Promise<boolean> {
+  const store = localStorage();
+  const raw = store ? store.getItem(ANONYMOUS_KEY) : await SecureStore.getItemAsync(ANONYMOUS_KEY);
+  return raw === 'true';
+}
+
+export async function clearAnonymousEntry(): Promise<void> {
+  const store = localStorage();
+  if (store) {
+    store.removeItem(ANONYMOUS_KEY);
+    return;
+  }
+  await SecureStore.deleteItemAsync(ANONYMOUS_KEY);
 }

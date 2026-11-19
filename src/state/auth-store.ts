@@ -2,16 +2,22 @@ import { create } from 'zustand';
 
 import { clearLocalAuth, refreshSession } from '@/auth/client';
 import { loadAuthConfig } from '@/auth/config';
-import { loadStoredSession } from '@/auth/storage';
+import {
+  clearAnonymousEntry,
+  loadAnonymousEntry,
+  loadStoredSession,
+  saveAnonymousEntry,
+} from '@/auth/storage';
 import type { AuthSession } from '@/auth/types';
 
-type AuthStatus = 'loading' | 'signedOut' | 'signedIn';
+type AuthStatus = 'loading' | 'signedOut' | 'signedIn' | 'anonymous';
 
 type AuthState = {
   status: AuthStatus;
   session: AuthSession | null;
   hydrate: () => Promise<void>;
-  setSession: (session: AuthSession) => void;
+  continueAnonymous: () => Promise<void>;
+  setSession: (session: AuthSession) => Promise<void>;
   clear: () => Promise<void>;
 };
 
@@ -22,7 +28,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const stored = await loadStoredSession();
       if (!stored) {
-        set({ status: 'signedOut', session: null });
+        const anonymous = await loadAnonymousEntry();
+        set({ status: anonymous ? 'anonymous' : 'signedOut', session: null });
         return;
       }
 
@@ -43,10 +50,20 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ status: 'signedOut', session: null });
     }
   },
-  setSession: (session) => set({ status: 'signedIn', session }),
+  continueAnonymous: async () => {
+    try {
+      await Promise.all([clearLocalAuth(), saveAnonymousEntry()]);
+    } finally {
+      set({ status: 'anonymous', session: null });
+    }
+  },
+  setSession: async (session) => {
+    await clearAnonymousEntry();
+    set({ status: 'signedIn', session });
+  },
   clear: async () => {
     try {
-      await clearLocalAuth();
+      await Promise.all([clearLocalAuth(), clearAnonymousEntry()]);
     } finally {
       set({ status: 'signedOut', session: null });
     }
