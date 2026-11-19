@@ -18,6 +18,7 @@ import { workingSetsByExercise } from '@/domain/progress';
 import type { UnitPreference } from '@/domain/types';
 import { formatWeight, fromDisplay, toDisplay, UNIT_LABEL } from '@/domain/units';
 import { stageInfoForXp, X_PER_WEEK_DECAY } from '@/domain/xp';
+import { useAuthStore } from '@/state/auth-store';
 import { useProfileStore } from '@/state/profile-store';
 
 const UNITS: UnitPreference[] = ['kg', 'lb', 'st'];
@@ -41,6 +42,8 @@ function weightInputValue(weightKg: number | null, unit: UnitPreference): string
 }
 
 export default function ProfileScreen() {
+  const authStatus = useAuthStore((s) => s.status);
+  const authEmail = useAuthStore((s) => s.session?.identity.email);
   const profile = useProfileStore((s) => s.profile);
   const createProfile = useProfileStore((s) => s.createProfile);
   const setUnitPref = useProfileStore((s) => s.setUnitPref);
@@ -93,6 +96,7 @@ export default function ProfileScreen() {
   const progressPercent = Math.min(100, Math.max(0, Math.round(stage.withinStage * 100)));
   const xpToNext =
     stage.nextThreshold === null ? null : Math.ceil(stage.nextThreshold - profile.xp);
+  const userId = authStatus === 'anonymous' ? 'anonymous' : (authEmail ?? '—');
 
   const saveBodyWeight = () => {
     const parsed = Number.parseFloat(weightInput);
@@ -208,6 +212,13 @@ export default function ProfileScreen() {
             />
           ))}
         </View>
+      </Panel>
+
+      <Panel>
+        <PixelText variant="label" color={Palette.textSecondary}>
+          Identity
+        </PixelText>
+        <StatRow label="User ID" value={userId} />
       </Panel>
 
       <AccountPanel />

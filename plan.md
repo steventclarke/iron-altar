@@ -393,6 +393,45 @@ Action items:
 - [ ] Verify deep links, reload persistence, anonymous/Google logout, and callback
       completion on preview web and a development build; deploy preview, then production.
 
+### Phase 9.2: Explicit Google Consent & Profile User ID — Completed
+
+Goal: make Google data sharing visible at sign-in, and show the active entry identity on the
+Profile screen. Both are presentation/UX changes; neither adds accounts, sync, or new storage.
+
+Decisions:
+
+- Google currently reuses prior consent, so returning users may skip its consent page.
+  `beginSignIn()` sends `prompt: Prompt.Consent` with `identity_provider=Google` for
+  managed-login compatibility.
+- A live check against the deployed preview client showed the classic Hosted UI drops
+  `prompt=consent` before redirecting to Google. To guarantee the user agrees to what is
+  shared, `/welcome` now shows an in-app consent confirmation listing the Google email and
+  basic profile data before redirecting. The user can go back without signing in.
+- Platform follow-up: migrate the shared pool to managed login branding if Google's own
+  consent screen should appear every time. Track it in `stevenclarke-infrastructure`; do not
+  create a second OAuth client or silently change scopes.
+- Keep the existing `openid email profile` scopes for now, but verify the consent screen
+  lists email sharing. Narrowing to `openid email` is a separate decision if the Account
+  panel no longer needs profile data.
+- Add a **User ID** row on `/profile` sourced from `useAuthStore`: `session.identity.email`
+  for Google entry, the literal `anonymous` for anonymous entry. Do not add an identity field
+  to the local profile record or change persistence.
+- Auth hydration already completes before protected routes render, so Profile should normally
+  have a resolved status; render `—` only as a defensive loading value.
+
+Action items:
+
+- [x] Add `Prompt.Consent` to `beginSignIn()` in `src/auth/client.ts`.
+- [x] Confirm live that the classic Hosted UI drops the prompt; add an in-app consent
+      confirmation to `src/app/welcome.tsx` and document the platform follow-up.
+- [x] Add a `User ID` row to `src/app/(tabs)/profile.tsx` using the existing `StatRow`
+      pattern: Google email or `anonymous`.
+- [ ] Verify on preview web and a development build: in-app consent appears before the Google
+      redirect and Google entry still completes; Profile User ID is the Google email; anonymous
+      entry shows `anonymous`; sign-out returns to `/welcome`.
+- [ ] Deploy preview, then production after verification. Google test users still need to
+      be registered in the platform-owned Google Cloud project before SSO testing.
+
 ## 6. Feature Refinements (triaged)
 
 Efficiency rule: fold **structural** items (data model, domain, persistence, architecture)
@@ -464,7 +503,8 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
 - **P9 Google SSO (implemented; landing gate shipped in P9.1):** Google sign-in through the
   platform's shared Cognito pool and per-app client. Identity only, no sync. Phase 9.1 added a
   `/welcome` landing gate with Google or anonymous entry and replaced the optional in-app
-  sign-in path. See sections 5 and 8.
+  sign-in path. Phase 9.2 forces an explicit Google consent prompt and adds a **User ID** row
+  to Profile. See sections 5 and 8.
 
 ## 7. Hosting & Release Infrastructure (P7.1/P7.2)
 
@@ -753,6 +793,9 @@ workflows. Setup and troubleshooting live in `docs/google-sso.md`.
 `/welcome`. Google remains optional, but every app route is guarded until the user chooses
 Google or anonymous. Sign-out returns to the gate.
 
+**Phase 9.2** adds an explicit consent confirmation before Google sign-in so the user
+approves email sharing, and a Profile **User ID** row showing the Google email or `anonymous`.
+
 ### Platform values consumed (not hardcoded)
 
 | SSM parameter                  | Use                                                    |
@@ -852,6 +895,9 @@ exchange CORS was verified against the deployed Hosted UI domain.
   `/auth/callback` still completes; anonymous survives web reload and native relaunch; web
   Google reload returns to `/welcome`; sign-out from either mode resets to `/welcome`; browser
   back does not re-enter the app; no landing flash on a restored native session.
+- Consent and identity (Phase 9.2): in-app consent appears before the Google redirect and
+  Google entry still completes; Profile **User ID** shows the Google email after Google entry
+  and `anonymous` after anonymous entry; both web and development build.
 
 ### Google Cloud test users (platform-owned)
 
@@ -876,3 +922,7 @@ To test sign-in while the consent screen is in **Testing**:
 2. Native signature verification: claim-only (P9) vs. adding a WebCrypto polyfill.
 3. Web Google reload under the Phase 9.1 gate returns to `/welcome` by design. Silent
    `prompt=none` re-auth or a BFF can remove that step later; anonymous already persists.
+4. Consent delivery (Phase 9.2): the classic Hosted UI drops `prompt=consent`, so the app now
+   shows its own confirmation. Migrate the shared pool to managed login if Google's consent
+   screen must appear; keep `email profile` scopes or narrow to `email` once profile usage is
+   confirmed.
