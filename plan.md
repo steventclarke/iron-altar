@@ -305,9 +305,9 @@ Notes:
 
 Platform contract: `../stevenclarke-infrastructure/docs/google-sso-for-tenant-apps.md`.
 The platform `AuthStack`/`OidcStack` is deployed and `/platform/auth/*` resolves in
-`us-east-2`; the preview app client and CSP are live. Sign-in remains optional: "continue
-without signing in" is available on the login, callback, and logout screens, and no route or
-feature requires a session.
+`us-east-2`; the preview app client and CSP are live. Sign-in is identity-only. Phase 9.1
+below changes the entry flow from optional in-app sign-in to a landing gate; Google remains
+optional because anonymous access is always available.
 
 - [x] Confirmed the platform Hosted UI domain, shared pool, Google IdP, `/platform/auth/*`
       params, and the app deploy roles' scoped `cognito-idp` client permissions.
@@ -347,6 +347,50 @@ feature requires a session.
       authorize request redirects to Google's consent screen.
 - [ ] Complete interactive sign-in/out verification on preview web and a development build,
       then deploy production.
+
+### Phase 9.1: Landing Gate & Anonymous Access — Design in review (not implemented)
+
+Goal: every app load starts at `/welcome`. The user must choose **Sign in with Google** or
+**Continue as anonymous** before any app route is reachable. Google stays optional; anonymous
+is a local identity mode, not a separate database, profile, or sync state. Signing out
+returns to `/welcome`.
+
+Decisions:
+
+- Persist the entry choice. Anonymous survives reloads: `localStorage` on web, SecureStore on
+  native. Native Google sessions restore from SecureStore as they do today. Web Google tokens
+  stay memory-only, so a hard reload returns to `/welcome`; signing in again reuses the shared
+  Cognito session so Google usually does not prompt.
+- Put the landing page at `/welcome` and remove `/login`. Keep `/auth/callback` reachable
+  without an entry so the redirect can complete.
+- Gate routes with Expo Router `Stack.Protected` plus
+  `unstable_settings.initialRouteName = 'welcome'`. Direct and deep links without an entry
+  redirect to the landing page; browser back to `/welcome` after entry redirects home.
+- Extend the auth store with an `anonymous` status and `continueAnonymous()`. It persists the
+  anonymous marker and clears any Google session or pending auth. `setSession()` clears the
+  anonymous marker. Logout clears both the marker and the Google session.
+- The landing screen owns the busy/error states for Google sign-in. Callback success replaces
+  to `/`; callback failure offers retry or anonymous. The Account panel shows the Google
+  identity or **Anonymous** and a sign-out action; switching modes requires signing out.
+- Training data remains local-first and unchanged. Anonymous users share the same local
+  database and profile rules as Google users. No backend, refresh-token-at-rest, or CSP
+  changes are required.
+- Before Google sign-in can be tested, the tester's Google account must be added as a test
+  user in the platform-owned Google Cloud project (`279862640725`); see
+  `docs/google-sso.md#google-cloud-test-users`.
+
+Action items:
+
+- [ ] Persist the anonymous marker and add the `anonymous` auth status and
+      `continueAnonymous()` action; clear the marker on Google entry and on logout.
+- [ ] Add `/welcome` with Google and anonymous actions; remove `/login` and update links.
+- [ ] Rebuild the root layout guard with `Stack.Protected`, the `welcome` initial route, and
+      splash-screen gating on auth hydration.
+- [ ] Update the callback, logout, and Account panel for the anonymous/Google entry modes.
+- [ ] Document the flow, persistence matrix, and test-user setup; update the Account panel
+      copy.
+- [ ] Verify deep links, reload persistence, anonymous/Google logout, and callback
+      completion; deploy preview, then production.
 
 ## 6. Feature Refinements (triaged)
 
@@ -416,9 +460,10 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
   published `@issue-reporter/client` library that tenant apps configure, public GitHub
   issues via a GitHub App, diagnostics redaction, rate limits, and a public-report
   acknowledgement.
-- **P9 Google SSO (implemented, preview verification pending):** optional Google sign-in
-  through the platform's shared Cognito pool and per-app client; identity only, no gating
-  or sync, with a "continue without signing in" path. See sections 5 and 8.
+- **P9 Google SSO (implemented; landing gate designed in P9.1):** Google sign-in through the
+  platform's shared Cognito pool and per-app client. Identity only, no sync. Phase 9.1 adds a
+  `/welcome` landing gate with Google or anonymous entry and replaces the optional in-app
+  sign-in path. See sections 5 and 8.
 
 ## 7. Hosting & Release Infrastructure (P7.1/P7.2)
 
@@ -703,6 +748,11 @@ Implemented in `infra/lib/static-site-stack.ts`, `src/auth/`, `src/state/auth-st
 `src/app/{login,auth/callback,logout}.tsx`, `src/ui/account-panel.tsx`, and the deploy
 workflows. Setup and troubleshooting live in `docs/google-sso.md`.
 
+**Planned change (Phase 9.1):** replace the optional in-app sign-in entry with a `/welcome`
+landing gate. Google remains optional, but every app route is guarded until the user chooses
+Google or anonymous. Sign-out returns to the gate. The current optional flow remains in
+place until Phase 9.1 ships.
+
 ### Platform values consumed (not hardcoded)
 
 | SSM parameter                  | Use                                                    |
@@ -730,6 +780,27 @@ workflow reads from `cdk-outputs.json`.
 Prod carries the prod web URL and native scheme. Preview additionally carries localhost and
 loopback URLs. Cognito supports custom URI schemes and loopback HTTP for local development.
 
+### Landing gate and entry flow (planned, Phase 9.1)
+
+| State     | Persistence                                                                                                              | Route access                                                                           |
+| --------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| No entry  | None                                                                                                                     | Only `/welcome` and `/auth/callback` render; every other route redirects to `/welcome` |
+| Anonymous | `localStorage` on web, SecureStore on native; no Google tokens                                                           | Full app                                                                               |
+| Google    | Native: SecureStore session restores on launch. Web: memory-only, so reload clears the session and returns to `/welcome` | Full app; re-signing in reuses the shared Cognito session                              |
+| Sign-out  | Clears the anonymous marker, Google tokens, and pending PKCE state; Google sign-out also ends the shared Cognito session | Returns to `/welcome`                                                                  |
+
+- `/login` is removed; `/welcome` is the landing page. Existing `/auth/callback` and logout
+  routes keep their registered URLs.
+- The root layout uses `Stack.Protected` and sets the stack's initial route to `welcome`.
+  Deep links without an entry land on `/welcome`; browser back to `/welcome` after entry
+  redirects to `/`.
+- Splash stays visible until auth hydration finishes so a restored native session does not
+  flash the landing page.
+- Anonymous is a local identity mode only: the same local database, profile, and XP rules
+  apply. No per-mode data separation, backend, or sync is introduced.
+- The Account panel shows **Anonymous** or the Google identity and offers sign-out. There is
+  no in-app mode switch; signing out returns to the gate.
+
 ### Config delivery
 
 - Deploy workflows read `/platform/auth/*` and the stack's `AuthClientId`/`SiteUrl`
@@ -749,10 +820,9 @@ loopback URLs. Cognito supports custom URI schemes and loopback HTTP for local d
 
 Validate `iss`, `aud` (client ID), `exp`, `token_use`, and `email_verified`. Web verifies
 the RS256 signature against JWKS with `jose`; native validates claims only because Hermes
-lacks WebCrypto. Cognito currently maps Google `email` but not `email_verified`, so federated
-users arrive with `email_verified=false`; the app accepts the identity but hides the email
-until the platform maps `GOOGLE_EMAIL_VERIFIED`. Sign-in is optional and identity-only: no
-gating, no sync, local-first data flow unchanged.
+lacks WebCrypto. Google sign-in is identity-only: no sync and no feature gating beyond the
+Phase 9.1 landing gate. Under 9.1, a web Google reload still returns to `/welcome` because
+tokens stay memory-only; anonymous entry persists. Native restores either mode.
 
 ### CSP
 
@@ -778,9 +848,31 @@ exchange CORS was verified against the deployed Hosted UI domain.
 - App checklist: web callback returns to Profile; cancel/error keeps "continue without
   signing in" available; native deep link works in a development build; relaunch restores
   the session; CSP does not block token/JWKS/avatar requests; preview then prod.
+- Landing gate (Phase 9.1): direct links to protected routes redirect to `/welcome`;
+  `/auth/callback` still completes; anonymous survives web reload and native relaunch; web
+  Google reload returns to `/welcome`; sign-out from either mode resets to `/welcome`; browser
+  back does not re-enter the app; no landing flash on a restored native session.
+
+### Google Cloud test users (platform-owned)
+
+The Google OAuth client belongs to the platform's Google Cloud project. Its client ID is
+`279862640725-co9t4uufugkp8rklh4vatc63ve08scr1`, so the project number is `279862640725`.
+To test sign-in while the consent screen is in **Testing**:
+
+1. Sign in to [Google Cloud Console](https://console.cloud.google.com/) with the account that
+   owns the platform project and select the project numbered `279862640725`.
+2. Open **Google Auth Platform → Audience** (older UI: **APIs & Services → OAuth consent
+   screen**).
+3. Under **Test users**, add the exact Google account used to test Iron Altar.
+4. Confirm the publishing status is **Testing** and the user type is **External**. If the
+   user type is **Internal**, only Workspace-org accounts can sign in; switch to External or
+   use an org account.
+5. Do not create another OAuth client; the platform owns the only one.
 
 ### Open decisions
 
 1. Web session durability: in-memory + shared Cognito re-auth (P9) vs. a small BFF for
    HttpOnly refresh cookies. A BFF is out of scope until sync exists.
 2. Native signature verification: claim-only (P9) vs. adding a WebCrypto polyfill.
+3. Web Google reload under the Phase 9.1 gate returns to `/welcome` by design. Silent
+   `prompt=none` re-auth or a BFF can remove that step later; anonymous already persists.
