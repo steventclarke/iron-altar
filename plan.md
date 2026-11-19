@@ -98,7 +98,7 @@ src/
     (tabs)/progress       # data viz
     (tabs)/profile
     session/[id]          # active session log
-    login                 # Google sign-in (P9)
+    welcome               # Landing gate: Google or anonymous (P9.1)
     auth/callback         # OIDC redirect handler (P9)
     logout                # sign-out (P9)
   domain/                 # types + pure logic (XP, volume, 1RM, stage calc, units)
@@ -325,9 +325,9 @@ optional because anonymous access is always available.
 - [x] Added `expo-auth-session`, `expo-crypto`, `expo-secure-store`, and `jose`; implemented
       PKCE + state, code exchange, claim validation, web signature verification, session
       restore/refresh, and a Zustand auth store in `src/auth/` and `src/state/auth-store.ts`.
-- [x] Added `/login`, `/auth/callback`, and `/logout` routes plus an Account panel on
-      Profile; cancel/errors fall back to the app and "Continue without signing in" is
-      always present.
+- [x] Added the original `/login` route (superseded by `/welcome` in P9.1), plus
+      `/auth/callback`, `/logout`, and an Account panel on Profile; cancel/errors fall back to
+      the app and "Continue without signing in" is always present.
 - [x] Web keeps tokens in memory and relies on the shared Cognito session for re-auth;
       native uses SecureStore and refreshes before expiry; refresh tokens never touch
       `localStorage`.
@@ -339,16 +339,17 @@ optional because anonymous access is always available.
       Client-side unit-test coverage remains a follow-up (the app has no Jest harness yet).
 - [x] Added `docs/google-sso.md` with app-specific values, redirect matrix, local setup,
       session behavior, CSP, and troubleshooting; linked it from the README.
-- [ ] Platform follow-up: map Google `email_verified` onto Cognito's `email_verified`
-      attribute (`cognito.ProviderAttribute.GOOGLE_EMAIL_VERIFIED`). Cognito currently leaves
-      federated users at `email_verified=false`, so the app accepts sign-in but hides the
-      email until the platform mapping ships.
+- [x] Platform follow-up shipped: Google `email_verified` is mapped onto Cognito's
+      `email_verified` attribute (`cognito.ProviderAttribute.GOOGLE_EMAIL_VERIFIED`) in
+      `stevenclarke-infrastructure` (PR #29). The shared pool also uses a mutable `email`
+      attribute so repeat federated sign-ins no longer fail with
+      `"SIGN-IN FAILED user.email: Attribute cannot be updated."`.
 - [x] Deployed the preview stack: client `iron-altar-preview` created, CSP live, and the
       authorize request redirects to Google's consent screen.
 - [ ] Complete interactive sign-in/out verification on preview web and a development build,
       then deploy production.
 
-### Phase 9.1: Landing Gate & Anonymous Access — Design in review (not implemented)
+### Phase 9.1: Landing Gate & Anonymous Access — Completed
 
 Goal: every app load starts at `/welcome`. The user must choose **Sign in with Google** or
 **Continue as anonymous** before any app route is reachable. Google stays optional; anonymous
@@ -363,9 +364,9 @@ Decisions:
   Cognito session so Google usually does not prompt.
 - Put the landing page at `/welcome` and remove `/login`. Keep `/auth/callback` reachable
   without an entry so the redirect can complete.
-- Gate routes with Expo Router `Stack.Protected` plus
-  `unstable_settings.initialRouteName = 'welcome'`. Direct and deep links without an entry
-  redirect to the landing page; browser back to `/welcome` after entry redirects home.
+- Gate routes with Expo Router `Stack.Protected` plus `unstable_settings.anchor = 'welcome'`
+  (SDK 58; `initialRouteName` is deprecated). Direct and deep links without an entry redirect
+  to the landing page; browser back to `/welcome` after entry redirects home.
 - Extend the auth store with an `anonymous` status and `continueAnonymous()`. It persists the
   anonymous marker and clears any Google session or pending auth. `setSession()` clears the
   anonymous marker. Logout clears both the marker and the Google session.
@@ -381,16 +382,16 @@ Decisions:
 
 Action items:
 
-- [ ] Persist the anonymous marker and add the `anonymous` auth status and
+- [x] Persist the anonymous marker and add the `anonymous` auth status and
       `continueAnonymous()` action; clear the marker on Google entry and on logout.
-- [ ] Add `/welcome` with Google and anonymous actions; remove `/login` and update links.
-- [ ] Rebuild the root layout guard with `Stack.Protected`, the `welcome` initial route, and
+- [x] Add `/welcome` with Google and anonymous actions; remove `/login` and update links.
+- [x] Rebuild the root layout guard with `Stack.Protected`, the `welcome` anchor, and
       splash-screen gating on auth hydration.
-- [ ] Update the callback, logout, and Account panel for the anonymous/Google entry modes.
-- [ ] Document the flow, persistence matrix, and test-user setup; update the Account panel
+- [x] Update the callback, logout, and Account panel for the anonymous/Google entry modes.
+- [x] Document the flow, persistence matrix, and test-user setup; update the Account panel
       copy.
 - [ ] Verify deep links, reload persistence, anonymous/Google logout, and callback
-      completion; deploy preview, then production.
+      completion on preview web and a development build; deploy preview, then production.
 
 ## 6. Feature Refinements (triaged)
 
@@ -460,9 +461,9 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
   published `@issue-reporter/client` library that tenant apps configure, public GitHub
   issues via a GitHub App, diagnostics redaction, rate limits, and a public-report
   acknowledgement.
-- **P9 Google SSO (implemented; landing gate designed in P9.1):** Google sign-in through the
-  platform's shared Cognito pool and per-app client. Identity only, no sync. Phase 9.1 adds a
-  `/welcome` landing gate with Google or anonymous entry and replaces the optional in-app
+- **P9 Google SSO (implemented; landing gate shipped in P9.1):** Google sign-in through the
+  platform's shared Cognito pool and per-app client. Identity only, no sync. Phase 9.1 added a
+  `/welcome` landing gate with Google or anonymous entry and replaced the optional in-app
   sign-in path. See sections 5 and 8.
 
 ## 7. Hosting & Release Infrastructure (P7.1/P7.2)
@@ -745,13 +746,12 @@ one public app client per environment, the sign-in/callback/logout routes, sessi
 claim validation, and the CSP. No second user pool or Google OAuth client exists.
 
 Implemented in `infra/lib/static-site-stack.ts`, `src/auth/`, `src/state/auth-store.ts`,
-`src/app/{login,auth/callback,logout}.tsx`, `src/ui/account-panel.tsx`, and the deploy
+`src/app/{welcome,auth/callback,logout}.tsx`, `src/ui/account-panel.tsx`, and the deploy
 workflows. Setup and troubleshooting live in `docs/google-sso.md`.
 
-**Planned change (Phase 9.1):** replace the optional in-app sign-in entry with a `/welcome`
-landing gate. Google remains optional, but every app route is guarded until the user chooses
-Google or anonymous. Sign-out returns to the gate. The current optional flow remains in
-place until Phase 9.1 ships.
+**Phase 9.1 ships the landing gate:** the optional in-app `/login` entry is replaced by
+`/welcome`. Google remains optional, but every app route is guarded until the user chooses
+Google or anonymous. Sign-out returns to the gate.
 
 ### Platform values consumed (not hardcoded)
 
@@ -780,7 +780,7 @@ workflow reads from `cdk-outputs.json`.
 Prod carries the prod web URL and native scheme. Preview additionally carries localhost and
 loopback URLs. Cognito supports custom URI schemes and loopback HTTP for local development.
 
-### Landing gate and entry flow (planned, Phase 9.1)
+### Landing gate and entry flow (Phase 9.1)
 
 | State     | Persistence                                                                                                              | Route access                                                                           |
 | --------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
@@ -791,7 +791,7 @@ loopback URLs. Cognito supports custom URI schemes and loopback HTTP for local d
 
 - `/login` is removed; `/welcome` is the landing page. Existing `/auth/callback` and logout
   routes keep their registered URLs.
-- The root layout uses `Stack.Protected` and sets the stack's initial route to `welcome`.
+- The root layout uses `Stack.Protected` and `unstable_settings.anchor = 'welcome'`.
   Deep links without an entry land on `/welcome`; browser back to `/welcome` after entry
   redirects to `/`.
 - Splash stays visible until auth hydration finishes so a restored native session does not
@@ -816,7 +816,7 @@ loopback URLs. Cognito supports custom URI schemes and loopback HTTP for local d
 | ------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Web     | ID/access tokens in memory only             | Manual sign-in reuses the shared Cognito session, so Google usually does not prompt; no refresh token in `localStorage` |
 | Native  | Refresh token + ID/access in SecureStore    | Refresh before expiry; restore on launch; clear all on sign-out                                                         |
-| Both    | Clear local session, then Cognito `/logout` | `logout_uri` ends the shared Cognito session; "continue without signing in" stays available                             |
+| Both    | Clear local session, then Cognito `/logout` | `logout_uri` ends the shared Cognito session; Phase 9.1 returns to `/welcome` with Google or anonymous entry            |
 
 Validate `iss`, `aud` (client ID), `exp`, `token_use`, and `email_verified`. Web verifies
 the RS256 signature against JWKS with `jose`; native validates claims only because Hermes
@@ -845,9 +845,9 @@ exchange CORS was verified against the deployed Hosted UI domain.
   the shared Cognito session reuses SSO; state mismatch and missing PKCE are rejected; wrong
   issuer/audience is rejected; sign-out clears the app and Cognito sessions; no tokens in
   URLs, logs, or `localStorage`.
-- App checklist: web callback returns to Profile; cancel/error keeps "continue without
-  signing in" available; native deep link works in a development build; relaunch restores
-  the session; CSP does not block token/JWKS/avatar requests; preview then prod.
+- App checklist: web callback returns to `/`; cancel/error returns to `/welcome` with
+  anonymous entry available; native deep link works in a development build; relaunch restores
+  the entry mode; CSP does not block token/JWKS/avatar requests; preview then prod.
 - Landing gate (Phase 9.1): direct links to protected routes redirect to `/welcome`;
   `/auth/callback` still completes; anonymous survives web reload and native relaunch; web
   Google reload returns to `/welcome`; sign-out from either mode resets to `/welcome`; browser

@@ -2,28 +2,27 @@
 
 Iron Altar can sign users in with Google through the platform's shared Cognito user pool.
 Google sign-in is **optional**: anonymous access is always available, and no training data
-is uploaded or synced. Today the app opens directly into training and sign-in is available
-from Profile. A planned Phase 9.1 landing gate changes the entry flow so the user must choose
-Google or anonymous before reaching app routes.
+is uploaded or synced. The app opens at `/welcome`; the user must choose Google or anonymous
+before reaching app routes.
 
 Platform contract: `../stevenclarke-infrastructure/docs/google-sso-for-tenant-apps.md`.
 
-> **Planned (Phase 9.1, not implemented):** a `/welcome` landing gate replaces the optional
-> in-app `/login` entry. Every app route is guarded until the user signs in with Google or
-> chooses **Continue as anonymous**. Sign-out returns to the landing page. See
-> [Landing gate](#landing-gate-planned-phase-91) below.
+> **Shipped in Phase 9.1:** a `/welcome` landing gate replaces the optional in-app `/login`
+> entry. Every app route is guarded until the user signs in with Google or chooses
+> **Continue as anonymous**. Sign-out returns to the landing page. See
+> [Landing gate](#landing-gate-phase-91) below.
 
 ## What the app owns
 
-| Piece                                                              | Where                                                   |
-| ------------------------------------------------------------------ | ------------------------------------------------------- |
-| Public PKCE app client per environment                             | `infra/lib/static-site-stack.ts` (`GoogleSignInClient`) |
-| Web callback/logout URLs and native `ironaltar://auth/callback`    | Client `CallbackURLs` / `LogoutURLs`                    |
-| Runtime config                                                     | `dist/auth-config.json`, written by the deploy workflow |
-| OIDC flow, token validation, session                               | `src/auth/`                                             |
-| `/welcome` landing gate (planned 9.1), `/auth/callback`, `/logout` | `src/app/`                                              |
-| Entry mode and anonymous marker (planned 9.1)                      | `src/state/auth-store.ts`, `src/auth/storage.ts`        |
-| CSP allowances                                                     | `SecurityHeadersPolicy` in the site stack               |
+| Piece                                                           | Where                                                   |
+| --------------------------------------------------------------- | ------------------------------------------------------- |
+| Public PKCE app client per environment                          | `infra/lib/static-site-stack.ts` (`GoogleSignInClient`) |
+| Web callback/logout URLs and native `ironaltar://auth/callback` | Client `CallbackURLs` / `LogoutURLs`                    |
+| Runtime config                                                  | `dist/auth-config.json`, written by the deploy workflow |
+| OIDC flow, token validation, session                            | `src/auth/`                                             |
+| `/welcome` landing gate, `/auth/callback`, `/logout`            | `src/app/`                                              |
+| Entry mode and anonymous marker                                 | `src/state/auth-store.ts`, `src/auth/storage.ts`        |
+| CSP allowances                                                  | `SecurityHeadersPolicy` in the site stack               |
 
 The platform owns the Cognito user pool, Google OAuth client, Hosted UI domain, and the
 `/platform/auth/*` SSM parameters. Do not create a Google OAuth client or another pool.
@@ -57,10 +56,9 @@ The app client ID is published as the `AuthClientId` CloudFormation output on
 The preview client also carries the localhost and native URLs; the prod client carries the
 prod web URL and the native scheme.
 
-## Landing gate (planned, Phase 9.1)
+## Landing gate (Phase 9.1)
 
-The app will open at `/welcome` on every cold load. The landing page offers exactly two
-choices:
+The app opens at `/welcome` on every cold load. The landing page offers exactly two choices:
 
 - **Sign in with Google** starts the existing PKCE flow and returns to `/`.
 - **Continue as anonymous** records a local anonymous entry and returns to `/`.
@@ -77,9 +75,10 @@ home.
 | Logout  | Clears the marker and returns to `/welcome` | Clears tokens, ends the Cognito session, and returns to `/welcome`                                       |
 
 Anonymous is a local identity mode, not a separate database, profile, or sync state. The
-Account panel will show **Anonymous** or the Google identity and offer sign-out; switching
-modes requires signing out. The planned route guard uses Expo Router `Stack.Protected` with
-`welcome` as the initial route, and splash stays visible until auth hydration completes.
+Account panel shows **Anonymous** or the Google identity and offers sign-out; switching
+modes requires signing out. The route guard uses Expo Router `Stack.Protected` with
+`unstable_settings.anchor = 'welcome'` (SDK 58; `initialRouteName` is deprecated), and splash
+stays visible until auth hydration completes.
 
 ## Runtime configuration
 
@@ -131,22 +130,20 @@ there is no runtime config fetch on native. Expo Go cannot complete native sign-
   restores the session on launch.
 - **Sign-out:** clears the local session and redirects to the Cognito `/logout` endpoint
   with the app's `logout_uri` so the shared SSO session also ends.
-- **Continue without signing in:** available today on `/login`, the callback screen, and the
-  logout screen. Phase 9.1 moves this to `/welcome` as **Continue as anonymous**; Google
-  stays optional, but the entry choice becomes required.
-- **Planned 9.1 persistence:** anonymous survives reload/relaunch, native Google restores,
-  and web Google returns to `/welcome` on reload because tokens remain memory-only.
+- **Continue as anonymous:** the entry choice on `/welcome`, and also offered on the callback
+  screen when sign-in fails. Google stays optional, but the entry choice is required.
+- **Persistence:** anonymous survives reload/relaunch, native Google restores, and web Google
+  returns to `/welcome` on reload because tokens remain memory-only.
 
 Web signature verification uses `jose` and the platform JWKS. Native P9 validates the ID
 token claims (`iss`, `aud`, `exp`, `token_use`, `email_verified`) but not the RS256
 signature because Hermes lacks WebCrypto; a backend or polyfill can tighten this later.
 
-Cognito currently maps the Google `email` claim but not `email_verified`, so federated users
-arrive with `email_verified=false`. Iron Altar accepts the sign-in for identity display but
-hides the email until the platform adds
-`emailVerified: cognito.ProviderAttribute.GOOGLE_EMAIL_VERIFIED` to the Google IdP attribute
-mapping and redeploys; existing users update on their next sign-in. Adding a Google Cloud
-test user fixes consent-screen access; it does not set this claim.
+The platform now maps both `email` and
+`emailVerified: cognito.ProviderAttribute.GOOGLE_EMAIL_VERIFIED` from Google, and the shared
+user pool uses a mutable `email` attribute. Repeat federated sign-ins therefore no longer fail
+with `"SIGN-IN FAILED user.email: Attribute cannot be updated."`. Adding a Google Cloud test
+user fixes consent-screen access; it does not change the attribute mapping.
 
 ## CSP
 
@@ -176,11 +173,11 @@ blocked / not-verified error.
 
 ## Troubleshooting
 
-| Symptom                                                | Likely cause                                                                                |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| “The Google account email is not verified”             | Cognito is not mapping Google `email_verified`; the app hides the email but still signs in. |
-| `redirect_uri_mismatch` / `invalid_request` at Cognito | Callback URL differs from the client config (scheme, port, trailing slash).                 |
-| "Sign-in is not configured"                            | `auth-config.json` missing or `EXPO_PUBLIC_AUTH_*` unset.                                   |
-| State/verifier error after returning                   | Pending sign-in was cleared (new tab, private mode, app restart). Start again.              |
-| CSP blocks token/JWKS request                          | Hosted UI or Cognito region changed; update the CSP and redeploy.                           |
-| Google prompt appears repeatedly                       | Cognito session ended or cookies blocked; expected after sign-out.                          |
+| Symptom                                                     | Likely cause                                                                                    |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `"SIGN-IN FAILED user.email: Attribute cannot be updated."` | Stale platform pool with immutable `email`; redeploy the shared `AuthStack` with mutable email. |
+| `redirect_uri_mismatch` / `invalid_request` at Cognito      | Callback URL differs from the client config (scheme, port, trailing slash).                     |
+| "Sign-in is not configured"                                 | `auth-config.json` missing or `EXPO_PUBLIC_AUTH_*` unset.                                       |
+| State/verifier error after returning                        | Pending sign-in was cleared (new tab, private mode, app restart). Start again.                  |
+| CSP blocks token/JWKS request                               | Hosted UI or Cognito region changed; update the CSP and redeploy.                               |
+| Google prompt appears repeatedly                            | Cognito session ended or cookies blocked; expected after sign-out.                              |
