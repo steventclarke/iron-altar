@@ -12,6 +12,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Palette } from '@/constants/theme';
 import { initializeDatabase } from '@/data/db/database';
 import { seedDatabase } from '@/data/seed/seed';
+import { installReportLogCapture } from '@/lib/report-log-buffer';
 import { useAuthStore } from '@/state/auth-store';
 import { useProfileStore } from '@/state/profile-store';
 import { useRestTimer } from '@/state/rest-timer-store';
@@ -33,6 +34,7 @@ export default function RootLayout() {
     let cancelled = false;
     (async () => {
       await initializeDatabase();
+      installReportLogCapture();
       seedDatabase();
       useProfileStore.getState().hydrate();
       useSessionStore.getState().hydrate();
@@ -75,6 +77,7 @@ export default function RootLayout() {
           <Stack.Screen name="history/[id]" />
           <Stack.Screen name="progress/[lift]" />
           <Stack.Screen name="progress/body-weight" />
+          <Stack.Screen name="report" />
           <Stack.Screen name="logout" />
         </Stack.Protected>
       </Stack>

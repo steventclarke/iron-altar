@@ -42,6 +42,11 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      - uses: ./.github/actions/configure-codeartifact
+        with:
+          role-arn: ${{ env.PREVIEW_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - run: npm ci
 
       - name: App checks
@@ -69,11 +74,6 @@ jobs:
       - name: Synth production infrastructure
         run: npx cdk synth -c environment=prod
         working-directory: infra
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.PREVIEW_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
 
       - name: Deploy infrastructure
         run: npx cdk deploy --all -c environment=preview --require-approval never --outputs-file cdk-outputs.json

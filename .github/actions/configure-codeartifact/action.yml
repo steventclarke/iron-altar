@@ -1,0 +1,45 @@
+name: Configure CodeArtifact npm access
+description: Assumes an app deploy role and configures npm auth for @stevenclarke packages.
+
+inputs:
+  role-arn:
+    description: Role with CodeArtifact read access.
+    required: true
+  aws-region:
+    description: AWS region for SSM and CodeArtifact.
+    required: true
+    default: us-east-2
+
+runs:
+  using: composite
+  steps:
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.role-arn }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Configure npm registry and token
+      shell: bash
+      run: |
+        DOMAIN=$(aws ssm get-parameter \
+          --name /platform/artifacts/codeartifact/domain \
+          --region "${{ inputs.aws-region }}" --query Parameter.Value --output text)
+        OWNER=$(aws ssm get-parameter \
+          --name /platform/artifacts/codeartifact/domain-owner \
+          --region "${{ inputs.aws-region }}" --query Parameter.Value --output text)
+        REGION=$(aws ssm get-parameter \
+          --name /platform/artifacts/codeartifact/region \
+          --region "${{ inputs.aws-region }}" --query Parameter.Value --output text)
+        REPOSITORY=$(aws ssm get-parameter \
+          --name /platform/artifacts/codeartifact/repository \
+          --region "${{ inputs.aws-region }}" --query Parameter.Value --output text)
+
+        ENDPOINT="${DOMAIN}-${OWNER}.d.codeartifact.${REGION}.amazonaws.com/npm/${REPOSITORY}/"
+        TOKEN=$(aws codeartifact get-authorization-token \
+          --domain "$DOMAIN" \
+          --domain-owner "$OWNER" \
+          --region "$REGION" \
+          --query authorizationToken --output text)
+
+        echo "CODEARTIFACT_NPM_REGISTRY_URL=https://${ENDPOINT}" >> "$GITHUB_ENV"
+        npm config set "//${ENDPOINT}:_authToken" "$TOKEN"

@@ -4,15 +4,27 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-2
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: preview
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
+      - uses: ./.github/actions/configure-codeartifact
+        with:
+          role-arn: ${{ vars.PREVIEW_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
       - run: npm ci
       - run: npm run format:check
       - run: npm run lint
