@@ -297,7 +297,8 @@ Notes:
 - [x] Publish `@stevenclarke/issue-reporter-core` and `@stevenclarke/issue-reporter-client` from
       `issue-reporter` so tenant apps import the contract, redaction, transport, and error
       mapping. Tenant apps install pinned `1.0.0` versions from the platform CodeArtifact
-      registry; CI and deploy workflows refresh a short-lived npm token via GitHub OIDC.
+      registry; CI (in the `preview` environment) and deploy workflows refresh a short-lived
+      npm token via GitHub OIDC.
 - [x] Add the report button, screenshot capture, full app-data snapshot, logs, stack
       traces, secret redaction, and public-report acknowledgement to the client.
 - [ ] Create GitHub labels and the GitHub App installation.
