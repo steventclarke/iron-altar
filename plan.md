@@ -296,13 +296,45 @@ Notes:
 - [ ] Implement the intake stack and GitHub App integration in `issue-reporter`.
 - [x] Publish `@stevenclarke/issue-reporter-core` and `@stevenclarke/issue-reporter-client` from
       `issue-reporter` so tenant apps import the contract, redaction, transport, and error
-      mapping. Tenant apps install pinned `1.0.0` versions from the platform CodeArtifact
+      mapping. Tenant apps install pinned `1.1.0` versions from the platform CodeArtifact
       registry; CI (in the `preview` environment) and deploy workflows refresh a short-lived
       npm token via GitHub OIDC.
 - [x] Add the report button, screenshot capture, full app-data snapshot, logs, stack
       traces, secret redaction, and public-report acknowledgement to the client.
 - [ ] Create GitHub labels and the GitHub App installation.
 - [ ] Deploy preview, verify end-to-end, then roll out production.
+
+#### Proposal: codebase snapshot metadata for issue reports
+
+**Current state (verified against `issue-reporter` 1.1.0):** application version is sent.
+`client.version` comes from `expoConfig.version` (`app.json`, currently `1.0.0`), `client.build`
+uses the native build number/versionCode (`null` on web), and `diagnostics.appVersion` repeats
+the version when data sharing is enabled. Branch, git commit/SHA, and deploy ref are **not**
+sent. The 1.1.0 `clientInfoSchema` has no source-control fields and strips unknown keys, and
+`diagnostics` is only included when the reporter opts into app data.
+
+**Goal:** every issue identifies the exact source snapshot that produced it, on web and native,
+without relying on the reporter to remember what they were testing.
+
+**Proposed approach:**
+
+1. Generate immutable build metadata at deploy/build time, not at runtime: `version`, native
+   `build`, full `commit` SHA, `ref` (branch/tag), `committedAt`, `environment`, and
+   `deployedAt`. Web can reuse the `DEPLOY_SHA`/`DEPLOY_REF` values already written to
+   `deployment.json`; native builds should inject the same values through the EAS build
+   environment. Never ship `.git` or read git state from the client bundle.
+2. Add a `source` object to the shared report contract in `issue-reporter` (target `1.2.0`)
+   alongside `client`, e.g. `client.source = { commit, ref, version, build, committedAt }`, and
+   extend `clientInfoSchema` (or add `sourceInfoSchema`) so `.strip()` does not drop it. Backend
+   ingest/worker must persist it and render `version (ref@short SHA)` in the GitHub issue body.
+3. Until the contract is extended, add the same fields under `diagnostics.build` as an interim
+   step. `diagnosticsSchema` is an open record, so the values survive transport, but only when
+   the reporter opts into app data.
+4. Sanitize refs before sending: allow branch/tag-like values, strip user-controlled text, and
+   update the public-report notice to say source version/ref is collected.
+5. Verification: preview reports must show the PR head SHA/ref from `DEPLOY_SHA`/`DEPLOY_REF`;
+   production reports must show the release tag/commit. Add a preview-UI line and, once an E2E
+   harness exists, assert the values match `deployment.json` / EAS metadata.
 
 ### Phase 9: Google SSO Sign-In — Implemented (preview verification pending)
 
