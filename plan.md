@@ -294,10 +294,10 @@ Notes:
 - [x] Generate architecture, ingest/worker sequence, and report-lifecycle diagrams in
       `docs/issue-reporting-architecture.md`.
 - [ ] Implement the intake stack and GitHub App integration in `issue-reporter`.
-- [ ] Publish `@stevenclarke/issue-reporter-core` and `@stevenclarke/issue-reporter-client` from
+- [x] Publish `@stevenclarke/issue-reporter-core` and `@stevenclarke/issue-reporter-client` from
       `issue-reporter` so tenant apps import the contract, redaction, transport, and error
-      mapping. This branch temporarily uses local `file:` dependencies; CI will fail until the
-      packages are published to CodeArtifact and the dependency is pinned to a version.
+      mapping. Tenant apps install pinned `1.0.0` versions from the platform CodeArtifact
+      registry; CI and deploy workflows refresh a short-lived npm token via GitHub OIDC.
 - [x] Add the report button, screenshot capture, full app-data snapshot, logs, stack
       traces, secret redaction, and public-report acknowledgement to the client.
 - [ ] Create GitHub labels and the GitHub App installation.
