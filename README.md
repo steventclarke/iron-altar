@@ -111,14 +111,15 @@ zone, and are tagged `project`, `environment`, `owner`, `application`, `managed-
 
 - `main` — production. Merges require PR approval via the `production` GitHub Environment
   and deploy to `iron-altar.stevenclarke.dev`.
-- `preview` — integration. Merges auto-deploy the preview environment at
-  `iron-altar-preview.stevenclarke.dev`.
+- `preview` — integration. Pull requests auto-deploy to the preview environment at
+  `iron-altar-preview.stevenclarke.dev` after checks; merges to `preview` also redeploy.
 - `phase/<n>` or `phase/<n>-<description>` — plan-phase work (e.g., `phase/7-hosting`).
 - `<issue-number>-<description>` — issue-driven work.
 
 ## Deployment
 
-CI runs on every pull request and on pushes to `main`:
+Checks run on every pull request as part of the preview deployment workflow, and on pushes
+to `main` via CI:
 
 - App: `npm ci`, `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm run build`
 - Infrastructure: `npm ci`, `npm run build`, `npm test`, and `npx cdk synth` for preview
@@ -126,8 +127,9 @@ CI runs on every pull request and on pushes to `main`:
 
 Continuous deployment uses GitHub Actions with OIDC (no long-lived AWS keys):
 
-- Push to `preview` → `preview.yml` assumes `iron-altar-deploy-preview`, deploys
-  `iron-altar-preview-site`, syncs the web export to S3, and invalidates CloudFront.
+- Pull request opened/updated, or push to `preview` → `preview.yml` assumes
+  `iron-altar-deploy-preview`, deploys `iron-altar-preview-site`, syncs the web export to
+  S3, and invalidates CloudFront.
 - Push to `main` → `deploy.yml` waits for approval through the `production` GitHub
   Environment, assumes `iron-altar-deploy-prod`, deploys the prod stacks, syncs the web
   export, and invalidates CloudFront.
