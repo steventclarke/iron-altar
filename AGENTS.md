@@ -59,8 +59,8 @@ Follow this process for all changes:
 
 - `main` — production. Merges require approval via the `production` GitHub Environment
   and deploy to `iron-altar.stevenclarke.dev`.
-- `preview` — integration. Merges auto-deploy the preview environment at
-  `iron-altar-preview.stevenclarke.dev`.
+- `preview` — integration. Pull requests auto-deploy to the preview environment at
+  `iron-altar-preview.stevenclarke.dev` after checks; merges to `preview` also redeploy.
 - `phase/<n>` or `phase/<n>-<description>` — plan-phase work (e.g., `phase/7-hosting`).
 - `<issue-number>-<description>` — issue-driven work.
 

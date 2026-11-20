@@ -545,7 +545,7 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
 Branch conventions:
 
 - `main` — production; merges deploy after approval through the `production` Environment.
-- `preview` — integration; merges auto-deploy the preview environment.
+- `preview` — integration; pull requests and merges auto-deploy the preview environment.
 - `phase/<n>` or `phase/<n>-<description>` — plan-phase work (e.g., `phase/7-hosting`).
 - `<issue-number>-<description>` — issue-driven work.
 
