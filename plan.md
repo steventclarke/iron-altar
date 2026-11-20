@@ -287,16 +287,18 @@ Notes:
 - [ ] Store listing metadata.
 - [ ] Text-file import (#4, post-MVP candidate; confirm format before building).
 
-### Phase 8: In-App Issue Reporting — Design in review
+### Phase 8: In-App Issue Reporting — In progress (tenant client implemented)
 
 - [x] Document the client flow, data collection, API contract, privacy model, and backend
       `IssueIntakeStack` design in `docs/issue-reporting-design.md`.
 - [x] Generate architecture, ingest/worker sequence, and report-lifecycle diagrams in
       `docs/issue-reporting-architecture.md`.
 - [ ] Implement the intake stack and GitHub App integration in `issue-reporter`.
-- [ ] Publish `@issue-reporter/core` and `@issue-reporter/client` from `issue-reporter` so
-      tenant apps import the contract, redaction, transport, and error mapping.
-- [ ] Add the report button, screenshot capture, full app-data snapshot, logs, stack
+- [ ] Publish `@stevenclarke/issue-reporter-core` and `@stevenclarke/issue-reporter-client` from
+      `issue-reporter` so tenant apps import the contract, redaction, transport, and error
+      mapping. This branch temporarily uses local `file:` dependencies; CI will fail until the
+      packages are published to CodeArtifact and the dependency is pinned to a version.
+- [x] Add the report button, screenshot capture, full app-data snapshot, logs, stack
       traces, secret redaction, and public-report acknowledgement to the client.
 - [ ] Create GitHub labels and the GitHub App installation.
 - [ ] Deploy preview, verify end-to-end, then roll out production.
@@ -495,11 +497,11 @@ can actually be used. Each phase pulls in the refinements that intersect its sur
   versioned S3 (release bucket stack in place; EAS workflow pending); P7.3 responsive web,
   accessibility, empty states, privacy/support pages, store listing metadata, and text-file
   import (#4) — post-MVP candidate; confirm format before building.
-- **P8 In-App Issue Reporting (design in review):** client report form + screenshot capture,
-  a platform-global `IssueIntakeStack` in the separate `issue-reporter` repository, a
-  published `@issue-reporter/client` library that tenant apps configure, public GitHub
-  issues via a GitHub App, diagnostics redaction, rate limits, and a public-report
-  acknowledgement.
+- **P8 In-App Issue Reporting (tenant client implemented; backend pending):** client report form,
+  screenshot capture, full app-data snapshot, logs, stack traces, diagnostics redaction, and a
+  public-report acknowledgement are wired into this app using local `file:` packages. Still
+  pending: publish the `issue-reporter` packages, implement the platform-global
+  `IssueIntakeStack` and GitHub App integration, create labels, and verify end-to-end.
 - **P9 Google SSO (implemented; landing gate shipped in P9.1):** Google sign-in through the
   platform's shared Cognito pool and per-app client. Identity only, no sync. Phase 9.1 added a
   `/welcome` landing gate with Google or anonymous entry and replaced the optional in-app

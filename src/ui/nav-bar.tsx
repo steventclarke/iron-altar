@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { PixelText } from '@/ui/text';
 import { Border, Palette, Radius, Spacing } from '@/constants/theme';
+import { setPendingReportContext } from '@/lib/report-draft';
+import { captureReportScreenshot } from '@/lib/screenshot';
 
 type NavLink = {
   label: string;
@@ -31,6 +33,17 @@ function isActive(pathname: string, href: string): boolean {
 export function NavBar({ links = NAV_LINKS }: { links?: NavLink[] }) {
   const pathname = usePathname();
 
+  const openReport = async () => {
+    let screenshot = null;
+    try {
+      screenshot = await captureReportScreenshot();
+    } catch {
+      screenshot = null;
+    }
+    setPendingReportContext({ screenshot, route: pathname });
+    router.push('/report' as never);
+  };
+
   return (
     <View style={styles.bar}>
       {links.map((link) => {
@@ -53,6 +66,18 @@ export function NavBar({ links = NAV_LINKS }: { links?: NavLink[] }) {
           </Pressable>
         );
       })}
+      {pathname !== '/report' ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Report an issue"
+          onPress={() => void openReport()}
+          style={({ pressed }) => [styles.reportButton, pressed && styles.pressed]}
+        >
+          <PixelText variant="label" color={Palette.crimson}>
+            !
+          </PixelText>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -80,5 +105,14 @@ const styles = StyleSheet.create({
   },
   pressed: {
     backgroundColor: Palette.surfacePressed,
+  },
+  reportButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 36,
+    borderWidth: Border.thick,
+    borderColor: Palette.crimsonDim,
+    borderRadius: Radius.sm,
+    paddingVertical: Spacing.one,
   },
 });
