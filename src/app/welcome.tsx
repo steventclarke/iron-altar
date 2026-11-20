@@ -15,6 +15,7 @@ export default function WelcomeScreen() {
   const continueAnonymous = useAuthStore((s) => s.continueAnonymous);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [consentPending, setConsentPending] = useState(false);
 
   useEffect(() => {
     if (status === 'signedIn' || status === 'anonymous') router.replace('/');
@@ -29,6 +30,7 @@ export default function WelcomeScreen() {
         await setSession(outcome.session);
         router.replace('/');
       }
+      if (outcome.kind === 'cancelled') setConsentPending(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Google sign-in failed.');
     } finally {
@@ -49,6 +51,43 @@ export default function WelcomeScreen() {
     }
   };
 
+  if (consentPending) {
+    return (
+      <Screen bottomInset={false}>
+        <PixelText variant="heading">IRON ALTAR</PixelText>
+        <Panel highlight>
+          <PixelText variant="label" color={Palette.gold}>
+            BEFORE YOU CONTINUE
+          </PixelText>
+          <PixelText variant="body" color={Palette.textSecondary}>
+            Iron Altar will receive your Google email address and basic profile information (name
+            and picture) to display your User ID. Google may also ask you to approve this access.
+            Training data stays on this device.
+          </PixelText>
+          <PixelButton
+            label={busy ? 'Opening Google…' : 'Agree & continue'}
+            disabled={busy}
+            onPress={signIn}
+          />
+          <PixelButton
+            label="Back"
+            variant="secondary"
+            disabled={busy}
+            onPress={() => {
+              setConsentPending(false);
+              setError(null);
+            }}
+          />
+          {error ? (
+            <PixelText variant="caption" color={Palette.danger}>
+              {error}
+            </PixelText>
+          ) : null}
+        </Panel>
+      </Screen>
+    );
+  }
+
   return (
     <Screen bottomInset={false}>
       <PixelText variant="heading">IRON ALTAR</PixelText>
@@ -61,9 +100,9 @@ export default function WelcomeScreen() {
           this device either way.
         </PixelText>
         <PixelButton
-          label={busy ? 'Opening Google…' : 'Sign in with Google'}
+          label="Sign in with Google"
           disabled={busy}
-          onPress={signIn}
+          onPress={() => setConsentPending(true)}
         />
         <PixelButton
           label="Continue as anonymous"

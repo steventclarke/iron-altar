@@ -80,6 +80,22 @@ modes requires signing out. The route guard uses Expo Router `Stack.Protected` w
 `unstable_settings.anchor = 'welcome'` (SDK 58; `initialRouteName` is deprecated), and splash
 stays visible until auth hydration completes.
 
+## Google sign-in consent (Phase 9.2)
+
+`beginSignIn()` sends `prompt=consent` with the Cognito authorize request for managed-login
+compatibility. A live check against the deployed preview client showed that the classic
+Hosted UI drops that parameter before redirecting to Google, so Google may not show its own
+consent screen to returning users.
+
+To make the disclosure reliable, `/welcome` shows an in-app confirmation before starting the
+Google flow. It states that Iron Altar receives the Google email address and basic profile
+information (name and picture) to display the Profile User ID, and that training data stays on
+the device. The user can go back without signing in.
+
+The Google account must still be registered as a test user while the platform consent screen
+is in **Testing**. Platform follow-up: migrate the shared pool to managed login branding if
+Google's own consent screen must appear every time. Do not create a second OAuth client.
+
 ## Runtime configuration
 
 Deployed web builds fetch `/auth-config.json` at runtime:
@@ -134,6 +150,8 @@ there is no runtime config fetch on native. Expo Go cannot complete native sign-
   screen when sign-in fails. Google stays optional, but the entry choice is required.
 - **Persistence:** anonymous survives reload/relaunch, native Google restores, and web Google
   returns to `/welcome` on reload because tokens remain memory-only.
+- **Profile User ID:** Profile shows the Google email for signed-in users or `anonymous` for
+  anonymous entry, sourced from the auth store; no local profile field is added.
 
 Web signature verification uses `jose` and the platform JWKS. Native P9 validates the ID
 token claims (`iss`, `aud`, `exp`, `token_use`, `email_verified`) but not the RS256
@@ -173,11 +191,12 @@ blocked / not-verified error.
 
 ## Troubleshooting
 
-| Symptom                                                     | Likely cause                                                                                    |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `"SIGN-IN FAILED user.email: Attribute cannot be updated."` | Stale platform pool with immutable `email`; redeploy the shared `AuthStack` with mutable email. |
-| `redirect_uri_mismatch` / `invalid_request` at Cognito      | Callback URL differs from the client config (scheme, port, trailing slash).                     |
-| "Sign-in is not configured"                                 | `auth-config.json` missing or `EXPO_PUBLIC_AUTH_*` unset.                                       |
-| State/verifier error after returning                        | Pending sign-in was cleared (new tab, private mode, app restart). Start again.                  |
-| CSP blocks token/JWKS request                               | Hosted UI or Cognito region changed; update the CSP and redeploy.                               |
-| Google prompt appears repeatedly                            | Cognito session ended or cookies blocked; expected after sign-out.                              |
+| Symptom                                                     | Likely cause                                                                                            |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `"SIGN-IN FAILED user.email: Attribute cannot be updated."` | Stale platform pool with immutable `email`; redeploy the shared `AuthStack` with mutable email.         |
+| `redirect_uri_mismatch` / `invalid_request` at Cognito      | Callback URL differs from the client config (scheme, port, trailing slash).                             |
+| "Sign-in is not configured"                                 | `auth-config.json` missing or `EXPO_PUBLIC_AUTH_*` unset.                                               |
+| State/verifier error after returning                        | Pending sign-in was cleared (new tab, private mode, app restart). Start again.                          |
+| CSP blocks token/JWKS request                               | Hosted UI or Cognito region changed; update the CSP and redeploy.                                       |
+| Google prompt appears repeatedly                            | Cognito session ended or cookies blocked; expected after sign-out.                                      |
+| In-app consent confirmation does not appear                 | The `/welcome` Google path was bypassed; Google's own screen may still be skipped by classic Hosted UI. |

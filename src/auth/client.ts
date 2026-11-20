@@ -1,5 +1,6 @@
 import {
   AuthRequest,
+  Prompt,
   ResponseType,
   exchangeCodeAsync,
   refreshAsync,
@@ -57,6 +58,7 @@ export async function beginSignIn(returnTo = '/profile'): Promise<SignInOutcome>
     responseType: ResponseType.Code,
     scopes: ['openid', 'email', 'profile'],
     usePKCE: true,
+    prompt: Prompt.Consent,
     extraParams: { identity_provider: 'Google' },
   });
 
